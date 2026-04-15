@@ -63,4 +63,14 @@ export const categories: Category[] = [
   },
 ];
 
-export const projects: Project[] = [];
+export const projects: Project[] = [
+  {
+    slug: "sky-map",
+    category: "survey",
+    title: "全天深度曝光参考图",
+    description:
+      "交互式全天星图，采用立体投影（Stereographic），支持无边界拖动漫游、滚轮缩放。叠加显示已拍摄深空照片，精确 WCS 定位，可查看巡天覆盖进度。",
+    tags: ["交互式", "立体投影", "WCS", "巡天"],
+    date: "2026-04",
+  },
+];
