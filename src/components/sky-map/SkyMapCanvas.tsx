@@ -33,6 +33,20 @@ interface ConstellationSeg {
   ra2: number; dec2: number;
 }
 
+/* ── filename parser ── */
+function parseFilename(name: string) {
+  // Convention: Target_Fratio_Exposure_Author
+  const parts = name.split("_");
+  if (parts.length >= 4) {
+    const author = parts[parts.length - 1];
+    const exposure = parts[parts.length - 2];
+    const telescope = parts[parts.length - 3];
+    const target = parts.slice(0, parts.length - 3).join("_");
+    return { target, telescope, exposure: exposure + "min", author };
+  }
+  return { target: name, telescope: "", exposure: "", author: "" };
+}
+
 /* ── constants ── */
 const MAG_LIMIT = 6.0;
 const MIN_FOV = 0.5;
@@ -606,7 +620,7 @@ export default function SkyMapCanvas() {
         {/* Hover filename label — top-left, like desktop */}
         {hoverOverlay && (
           <div className="absolute top-2 left-2 rounded bg-black/75 px-2.5 py-1 text-sm text-blue-100 pointer-events-none">
-            {hoverOverlay.name}
+            {parseFilename(hoverOverlay.name).target}
           </div>
         )}
 
@@ -618,23 +632,29 @@ export default function SkyMapCanvas() {
         )}
 
         {/* Selected overlay info panel — bottom-left */}
-        {selectedOverlay && (
-          <div className="absolute bottom-3 left-3 max-w-xs rounded-lg bg-black/80 backdrop-blur-sm border border-white/10 p-3 text-xs text-white/80 pointer-events-none">
-            <div className="font-semibold text-sm text-white mb-1">
-              {selectedOverlay.name}
-              <span className="ml-2 text-xs font-normal text-blue-300">
-                {selectedOverlay.showDetail ? "5\"/px 高清" : "20\"/px 预览"}
-              </span>
+        {selectedOverlay && (() => {
+          const info = parseFilename(selectedOverlay.name);
+          return (
+            <div className="absolute bottom-3 left-3 max-w-xs rounded-lg bg-black/80 backdrop-blur-sm border border-white/10 p-3 text-xs text-white/80 pointer-events-none">
+              <div className="font-semibold text-sm text-white mb-1">
+                {info.target}
+                <span className="ml-2 text-xs font-normal text-blue-300">
+                  {selectedOverlay.showDetail ? "5\"/px 高清" : "20\"/px 预览"}
+                </span>
+              </div>
+              {info.telescope && <div>望远镜: {info.telescope}</div>}
+              {info.exposure && <div>单帧曝光: {info.exposure}</div>}
+              {info.author && <div>作者: {info.author}</div>}
+              <div>RA: {selectedOverlay.ra.toFixed(4)}°  Dec: {selectedOverlay.dec.toFixed(4)}°</div>
+              <div>视场: {selectedOverlay.field_w_deg.toFixed(2)}° × {selectedOverlay.field_h_deg.toFixed(2)}°</div>
+              <div>像素比例: {selectedOverlay.pixscale.toFixed(2)}&quot;/px</div>
+              <div>方位角: {selectedOverlay.orientation.toFixed(1)}°</div>
+              {selectedOverlay.objects.length > 0 && (
+                <div className="mt-1">天体: {selectedOverlay.objects.join(", ")}</div>
+              )}
             </div>
-            <div>RA: {selectedOverlay.ra.toFixed(4)}°  Dec: {selectedOverlay.dec.toFixed(4)}°</div>
-            <div>视场: {selectedOverlay.field_w_deg.toFixed(2)}° × {selectedOverlay.field_h_deg.toFixed(2)}°</div>
-            <div>像素比例: {selectedOverlay.pixscale.toFixed(2)}&quot;/px</div>
-            <div>方位角: {selectedOverlay.orientation.toFixed(1)}°</div>
-            {selectedOverlay.objects.length > 0 && (
-              <div className="mt-1">天体: {selectedOverlay.objects.join(", ")}</div>
-            )}
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
