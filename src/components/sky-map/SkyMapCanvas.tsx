@@ -42,7 +42,7 @@ function parseFilename(name: string) {
     const exposure = parts[parts.length - 2];
     const telescope = parts[parts.length - 3];
     const target = parts.slice(0, parts.length - 3).join("_");
-    return { target, telescope, exposure: exposure + "min", author };
+    return { target, telescope, exposure: exposure + "h", author };
   }
   return { target: name, telescope: "", exposure: "", author: "" };
 }
@@ -642,8 +642,8 @@ export default function SkyMapCanvas() {
                   {selectedOverlay.showDetail ? "5\"/px 高清" : "20\"/px 预览"}
                 </span>
               </div>
-              {info.telescope && <div>望远镜: {info.telescope}</div>}
-              {info.exposure && <div>单帧曝光: {info.exposure}</div>}
+              {info.telescope && <div>望远镜焦比: {info.telescope}</div>}
+              {info.exposure && <div>单块曝光时间: {info.exposure}</div>}
               {info.author && <div>作者: {info.author}</div>}
               <div>RA: {selectedOverlay.ra.toFixed(4)}°  Dec: {selectedOverlay.dec.toFixed(4)}°</div>
               <div>视场: {selectedOverlay.field_w_deg.toFixed(2)}° × {selectedOverlay.field_h_deg.toFixed(2)}°</div>
