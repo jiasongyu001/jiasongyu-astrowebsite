@@ -520,7 +520,7 @@ export default function SkyMapCanvas() {
       {/* top bar */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#111118] border-b border-white/5 text-xs text-white/50 shrink-0">
         <span className="font-mono">{coordText}</span>
-        <span>滚轮缩放 · 拖动漫游 · 点击照片查看信息</span>
+        <span>滚轮缩放 · 拖动漫游 · 单击图片切换高低分辨率</span>
       </div>
 
       <div className="relative flex-1 min-h-0" ref={containerRef}>
