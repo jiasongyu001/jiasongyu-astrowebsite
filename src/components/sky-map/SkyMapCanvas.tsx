@@ -119,7 +119,7 @@ export default function SkyMapCanvas() {
       const metaData: Overlay[] = await metaRes.json();
       for (const ov of metaData) {
         const img = new Image();
-        img.src = `/skymap/previews/${ov.name}.webp`;
+        img.src = `/skymap/previews/${encodeURIComponent(ov.name)}.webp`;
         ov.img = img;
       }
       // Sort: larger field area first (so smaller images render on top)
@@ -132,7 +132,7 @@ export default function SkyMapCanvas() {
         for (const ov of metaData) {
           if (!ov.detailImg) {
             const dimg = new Image();
-            dimg.src = `/skymap/details/${ov.name}.webp`;
+            dimg.src = `/skymap/details/${encodeURIComponent(ov.name)}.webp`;
             dimg.onload = () => { needsDraw.current = true; };
             ov.detailImg = dimg;
           }
@@ -545,7 +545,7 @@ export default function SkyMapCanvas() {
                 setDetailLoading(hit.name);
                 if (!hit.detailImg) {
                   const img = new Image();
-                  img.src = `/skymap/details/${hit.name}.webp`;
+                  img.src = `/skymap/details/${encodeURIComponent(hit.name)}.webp`;
                   img.onload = () => {
                     setDetailLoading(null);
                     needsDraw.current = true;
