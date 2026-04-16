@@ -23,7 +23,9 @@ interface Overlay {
   orientation: number;
   field_w_deg: number;
   field_h_deg: number;
-  img?: HTMLImageElement;
+  img?: HTMLImageElement;       // preview (20"/px)
+  detailImg?: HTMLImageElement; // detail (5"/px), loaded on demand
+  showDetail?: boolean;         // true = currently showing detail
 }
 
 interface ConstellationSeg {
@@ -254,31 +256,46 @@ export default function SkyMapCanvas() {
     cx: number, cy: number, _W: number, _H: number
   ) {
     const ovs = overlays.current;
+    // Draw detail overlay last (on top), like desktop
+    let detailOv: Overlay | null = null;
     for (let i = 0; i < ovs.length; i++) {
       const ov = ovs[i];
-      if (!ov.img || !ov.img.complete || ov.img.naturalWidth === 0) continue;
-      const corners = ov.corners;
-      if (!corners || corners.length !== 4) continue;
-
-      const screenPts: [number, number][] = [];
-      let ok = true;
-      for (let j = 0; j < 4; j++) {
-        const [x, y, cc] = stereoFwd(corners[j][0], corners[j][1], c);
-        if (cc < -0.3) { ok = false; break; }
-        screenPts.push([cx - x * sc, cy - y * sc]);
-      }
-      if (!ok || screenPts.length !== 4) continue;
-
-      const iw = ov.img.naturalWidth;
-      const ih = ov.img.naturalHeight;
-
-      // Use perspective transform via triangulation (2 triangles)
-      ctx.save();
-      const isSelected = selectedOverlay && selectedOverlay.name === ov.name;
-      ctx.globalAlpha = isSelected ? 1.0 : 0.85;
-      drawTexturedQuad(ctx, ov.img, iw, ih, screenPts);
-      ctx.restore();
+      if (ov.showDetail) { detailOv = ov; continue; }
+      drawSingleOverlay(ctx, ov, sc, c, cx, cy, false);
     }
+    if (detailOv) {
+      drawSingleOverlay(ctx, detailOv, sc, c, cx, cy, true);
+    }
+  }
+
+  function drawSingleOverlay(
+    ctx: CanvasRenderingContext2D, ov: Overlay,
+    sc: number, c: ProjCenter, cx: number, cy: number,
+    isDetail: boolean
+  ) {
+    // Pick the active image: detail if toggled and loaded, else preview
+    const activeImg = (ov.showDetail && ov.detailImg?.complete && ov.detailImg.naturalWidth > 0)
+      ? ov.detailImg : ov.img;
+    if (!activeImg || !activeImg.complete || activeImg.naturalWidth === 0) return;
+    const corners = ov.corners;
+    if (!corners || corners.length !== 4) return;
+
+    const screenPts: [number, number][] = [];
+    let ok = true;
+    for (let j = 0; j < 4; j++) {
+      const [x, y, cc] = stereoFwd(corners[j][0], corners[j][1], c);
+      if (cc < -0.3) { ok = false; break; }
+      screenPts.push([cx - x * sc, cy - y * sc]);
+    }
+    if (!ok || screenPts.length !== 4) return;
+
+    const iw = activeImg.naturalWidth;
+    const ih = activeImg.naturalHeight;
+
+    ctx.save();
+    ctx.globalAlpha = isDetail ? 1.0 : 0.85;
+    drawTexturedQuad(ctx, activeImg, iw, ih, screenPts);
+    ctx.restore();
   }
 
   /* ── textured quad via 2 triangles ── */
@@ -471,7 +488,7 @@ export default function SkyMapCanvas() {
     if (pressPos.current) {
       const dist = Math.abs(pos.x - pressPos.current.x) + Math.abs(pos.y - pressPos.current.y);
       if (dist < 5) {
-        // Click
+        // Click — toggle detail like desktop
         const canvas = canvasRef.current;
         if (canvas) {
           const W = canvas.width;
@@ -480,8 +497,26 @@ export default function SkyMapCanvas() {
           const c = makeCenter(centerRA.current, centerDec.current);
           const hit = hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2);
           if (hit) {
-            setSelectedOverlay((prev) => prev?.name === hit.name ? null : hit);
+            if (hit.showDetail) {
+              // Already showing detail → switch back to preview
+              hit.showDetail = false;
+              setSelectedOverlay(null);
+            } else {
+              // Clear any other detail first
+              for (const ov of overlays.current) ov.showDetail = false;
+              hit.showDetail = true;
+              setSelectedOverlay(hit);
+              // Load detail image on demand if not loaded yet
+              if (!hit.detailImg) {
+                const img = new Image();
+                img.src = `/skymap/details/${hit.name}.webp`;
+                img.onload = () => { needsDraw.current = true; };
+                hit.detailImg = img;
+              }
+            }
           } else {
+            // Click empty space → clear detail
+            for (const ov of overlays.current) ov.showDetail = false;
             setSelectedOverlay(null);
           }
           needsDraw.current = true;
@@ -535,24 +570,29 @@ export default function SkyMapCanvas() {
           onTouchMove={onTouchMove}
         />
 
-        {/* Overlay info panel */}
-        {(selectedOverlay || hoverOverlay) && (
+        {/* Hover filename label — top-left, like desktop */}
+        {hoverOverlay && (
+          <div className="absolute top-2 left-2 rounded bg-black/75 px-2.5 py-1 text-sm text-blue-100 pointer-events-none">
+            {hoverOverlay.name}
+          </div>
+        )}
+
+        {/* Selected overlay info panel — bottom-left */}
+        {selectedOverlay && (
           <div className="absolute bottom-3 left-3 max-w-xs rounded-lg bg-black/80 backdrop-blur-sm border border-white/10 p-3 text-xs text-white/80 pointer-events-none">
-            {(() => {
-              const ov = selectedOverlay || hoverOverlay;
-              if (!ov) return null;
-              return (
-                <>
-                  <div className="font-semibold text-sm text-white mb-1">{ov.name}</div>
-                  <div>RA: {ov.ra.toFixed(4)}°  Dec: {ov.dec.toFixed(4)}°</div>
-                  <div>视场: {ov.field_w_deg.toFixed(2)}° × {ov.field_h_deg.toFixed(2)}°</div>
-                  <div>像素比例: {ov.pixscale.toFixed(2)}&quot;/px</div>
-                  {ov.objects.length > 0 && (
-                    <div className="mt-1">天体: {ov.objects.join(", ")}</div>
-                  )}
-                </>
-              );
-            })()}
+            <div className="font-semibold text-sm text-white mb-1">
+              {selectedOverlay.name}
+              <span className="ml-2 text-xs font-normal text-blue-300">
+                {selectedOverlay.showDetail ? "5\"/px 高清" : "20\"/px 预览"}
+              </span>
+            </div>
+            <div>RA: {selectedOverlay.ra.toFixed(4)}°  Dec: {selectedOverlay.dec.toFixed(4)}°</div>
+            <div>视场: {selectedOverlay.field_w_deg.toFixed(2)}° × {selectedOverlay.field_h_deg.toFixed(2)}°</div>
+            <div>像素比例: {selectedOverlay.pixscale.toFixed(2)}&quot;/px</div>
+            <div>方位角: {selectedOverlay.orientation.toFixed(1)}°</div>
+            {selectedOverlay.objects.length > 0 && (
+              <div className="mt-1">天体: {selectedOverlay.objects.join(", ")}</div>
+            )}
           </div>
         )}
       </div>
