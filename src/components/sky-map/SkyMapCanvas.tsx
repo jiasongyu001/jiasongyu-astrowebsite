@@ -69,6 +69,7 @@ export default function SkyMapCanvas() {
   const [coordText, setCoordText] = useState("RA: --  Dec: --");
   const [hoverOverlay, setHoverOverlay] = useState<Overlay | null>(null);
   const [selectedOverlay, setSelectedOverlay] = useState<Overlay | null>(null);
+  const [detailLoading, setDetailLoading] = useState<string | null>(null);
 
   /* ── load data ── */
   useEffect(() => {
@@ -110,8 +111,24 @@ export default function SkyMapCanvas() {
       // Sort: larger field area first (so smaller images render on top)
       metaData.sort((a, b) => (b.field_w_deg * b.field_h_deg) - (a.field_w_deg * a.field_h_deg));
       overlays.current = metaData;
-
       needsDraw.current = true;
+
+      // Preload all detail images in background (idle priority)
+      const preloadDetails = () => {
+        for (const ov of metaData) {
+          if (!ov.detailImg) {
+            const dimg = new Image();
+            dimg.src = `/skymap/details/${ov.name}.webp`;
+            dimg.onload = () => { needsDraw.current = true; };
+            ov.detailImg = dimg;
+          }
+        }
+      };
+      if ('requestIdleCallback' in window) {
+        (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(preloadDetails);
+      } else {
+        setTimeout(preloadDetails, 2000);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -501,23 +518,39 @@ export default function SkyMapCanvas() {
               // Already showing detail → switch back to preview
               hit.showDetail = false;
               setSelectedOverlay(null);
+              setDetailLoading(null);
             } else {
               // Clear any other detail first
               for (const ov of overlays.current) ov.showDetail = false;
               hit.showDetail = true;
               setSelectedOverlay(hit);
-              // Load detail image on demand if not loaded yet
-              if (!hit.detailImg) {
-                const img = new Image();
-                img.src = `/skymap/details/${hit.name}.webp`;
-                img.onload = () => { needsDraw.current = true; };
-                hit.detailImg = img;
+              // Check if detail already loaded
+              if (hit.detailImg?.complete && hit.detailImg.naturalWidth > 0) {
+                setDetailLoading(null);
+              } else {
+                setDetailLoading(hit.name);
+                if (!hit.detailImg) {
+                  const img = new Image();
+                  img.src = `/skymap/details/${hit.name}.webp`;
+                  img.onload = () => {
+                    setDetailLoading(null);
+                    needsDraw.current = true;
+                  };
+                  hit.detailImg = img;
+                } else {
+                  // Already started loading, attach handler
+                  hit.detailImg.onload = () => {
+                    setDetailLoading(null);
+                    needsDraw.current = true;
+                  };
+                }
               }
             }
           } else {
             // Click empty space → clear detail
             for (const ov of overlays.current) ov.showDetail = false;
             setSelectedOverlay(null);
+            setDetailLoading(null);
           }
           needsDraw.current = true;
         }
@@ -574,6 +607,13 @@ export default function SkyMapCanvas() {
         {hoverOverlay && (
           <div className="absolute top-2 left-2 rounded bg-black/75 px-2.5 py-1 text-sm text-blue-100 pointer-events-none">
             {hoverOverlay.name}
+          </div>
+        )}
+
+        {/* Detail loading indicator */}
+        {detailLoading && (
+          <div className="absolute top-2 right-2 rounded bg-black/75 px-3 py-1.5 text-xs text-yellow-200 pointer-events-none animate-pulse">
+            加载高清图: {detailLoading}...
           </div>
         )}
 
