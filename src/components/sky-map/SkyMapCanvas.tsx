@@ -42,7 +42,7 @@ function parseFilename(name: string) {
     const exposure = parts[parts.length - 2];
     const telescope = parts[parts.length - 3];
     const target = parts.slice(0, parts.length - 3).join("_");
-    return { target, telescope, exposure: exposure + "h", author };
+    return { target, telescope, exposure: exposure === "?" ? "?" : exposure + "h", author };
   }
   return { target: name, telescope: "", exposure: "", author: "" };
 }
