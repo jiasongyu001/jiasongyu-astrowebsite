@@ -47,10 +47,21 @@ function parseFilename(name: string) {
   return { target: name, telescope: "", exposure: "", author: "" };
 }
 
+/* ── catalog row layouts (compact JSON arrays) ── */
+// PN:  [ra, dec, rad_deg, has_size, is_candidate, label]
+// SNR: [ra, dec, rad_deg, label]
+// DSO: [ra, dec, rad_deg, has_size, cat_code, label]  cat: 0=M 1=NGC 2=IC 3=Sh2
+type PNRow  = [number, number, number, number, number, string];
+type SNRRow = [number, number, number, string];
+type DSORow = [number, number, number, number, number, string];
+
 /* ── constants ── */
 const MAG_LIMIT = 6.0;
 const MIN_FOV = 0.5;
 const MAX_FOV = 180;
+const PN_MIN_R = 3;
+const SNR_MIN_R = 4;
+const DSO_MIN_R = 3;
 
 /* ── precompute star display props ── */
 function starRadius(mag: number): number {
@@ -59,6 +70,24 @@ function starRadius(mag: number): number {
 }
 function starAlpha(mag: number): number {
   return Math.min(255, Math.max(80, Math.round(80 + 175 * (1 - mag / MAG_LIMIT))));
+}
+
+/* ── toggle button ── */
+function ToggleBtn({ label, on, bg, color, onClick }: {
+  label: string; on: boolean; bg: string; color: string; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-2 py-0.5 rounded text-xs font-medium transition-all select-none"
+      style={{
+        background: on ? bg : "rgba(60,60,60,.7)",
+        color: on ? color : "#888",
+      }}
+    >
+      {on ? "☑" : "☐"} {label}
+    </button>
+  );
 }
 
 export default function SkyMapCanvas() {
@@ -80,21 +109,46 @@ export default function SkyMapCanvas() {
   const animId = useRef(0);
   const needsDraw = useRef(true);
 
+  const pnData = useRef<PNRow[]>([]);
+  const snrData = useRef<SNRRow[]>([]);
+  const dsoData = useRef<DSORow[]>([]);
+
   const [coordText, setCoordText] = useState("RA: --  Dec: --");
   const [hoverOverlay, setHoverOverlay] = useState<Overlay | null>(null);
   const [selectedOverlay, setSelectedOverlay] = useState<Overlay | null>(null);
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
 
+  const [showPN, setShowPN] = useState(true);
+  const [showSNR, setShowSNR] = useState(true);
+  const [showMessier, setShowMessier] = useState(false);
+  const [showNGC, setShowNGC] = useState(false);
+  const [showIC, setShowIC] = useState(false);
+  const [showSh2, setShowSh2] = useState(false);
+  // Keep refs in sync for draw loop
+  const showPNRef = useRef(true);
+  const showSNRRef = useRef(true);
+  const showMessierRef = useRef(false);
+  const showNGCRef = useRef(false);
+  const showICRef = useRef(false);
+  const showSh2Ref = useRef(false);
+
   /* ── load data ── */
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [starsRes, hipRes, metaRes] = await Promise.all([
+      const [starsRes, hipRes, metaRes, pnRes, snrRes, dsoRes] = await Promise.all([
         fetch("/skymap/stars.json"),
         fetch("/skymap/hip_map.json"),
         fetch("/skymap/metadata.json"),
+        fetch("/skymap/pn_catalog.json"),
+        fetch("/skymap/snr_catalog.json"),
+        fetch("/skymap/dso_catalog.json"),
       ]);
       if (cancelled) return;
+
+      pnData.current = await pnRes.json();
+      snrData.current = await snrRes.json();
+      dsoData.current = await dsoRes.json();
 
       const starsData: (number[])[] = await starsRes.json();
       stars.current = starsData.map((s) => ({
@@ -170,6 +224,9 @@ export default function SkyMapCanvas() {
     drawConstellations(ctx, sc, c, cx, cy, W, H);
     drawStars(ctx, sc, c, cx, cy, W, H);
     drawOverlays(ctx, sc, c, cx, cy, W, H);
+    drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
 
     // FoV text
     ctx.fillStyle = "rgba(100,100,160,0.7)";
@@ -279,6 +336,169 @@ export default function SkyMapCanvas() {
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /* ── label placement helper ── */
+  function placeLabel(
+    cx_: number, cy_: number, radius: number, tw: number, th: number,
+    rects: [number, number, number, number][]
+  ): [number, number] {
+    const rd = radius + 3;
+    const cands: [number, number][] = [
+      [cx_ + rd, cy_ - 2], [cx_ + rd, cy_ + th], [cx_ + rd, cy_ - th],
+      [cx_ - tw - rd, cy_ - 2], [cx_ - tw / 2, cy_ - rd - 2],
+      [cx_ - tw / 2, cy_ + rd + th], [cx_ - tw - rd, cy_ - th],
+      [cx_ - tw - rd, cy_ + th],
+    ];
+    let best = cands[0];
+    for (const [tx, ty] of cands) {
+      const r: [number, number, number, number] = [tx, ty - th, tx + tw, ty];
+      let overlap = false;
+      for (const o of rects) {
+        if (!(r[2] < o[0] || r[0] > o[2] || r[3] < o[1] || r[1] > o[3])) { overlap = true; break; }
+      }
+      if (!overlap) { best = [tx, ty]; break; }
+    }
+    return best;
+  }
+
+  /* ── planetary nebulae ── */
+  function drawPN(
+    ctx: CanvasRenderingContext2D, sc: number, c: ProjCenter,
+    cx: number, cy: number, W: number, H: number, fovDeg: number
+  ) {
+    if (!showPNRef.current || pnData.current.length === 0) return;
+    const lineW = Math.max(0.4, Math.min(2.2, 30 / fovDeg));
+    const alpha = Math.max(140, Math.min(240, Math.round(600 / fovDeg)));
+    const a = (alpha / 255).toFixed(2);
+    const showAll = fovDeg < 3;
+    const showBig = fovDeg < 30;
+    ctx.lineWidth = lineW;
+    ctx.setLineDash([4, 3]);
+    const dpr = window.devicePixelRatio || 1;
+    const labelRects: [number, number, number, number][] = [];
+
+    for (const row of pnData.current) {
+      const [ra, dec, radDeg, hasSize, isCand, label] = row;
+      const [x, y, cc] = stereoFwd(ra, dec, c);
+      if (cc < -0.2) continue;
+      const sx = cx - x * sc;
+      const sy = cy - y * sc;
+      if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
+      const rPx = Math.max(radDeg * (Math.PI / 180) * sc, PN_MIN_R);
+      if (isCand) ctx.strokeStyle = `rgba(255,60,60,${a})`;
+      else if (hasSize) ctx.strokeStyle = `rgba(0,200,100,${a})`;
+      else ctx.strokeStyle = `rgba(255,160,40,${a})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (showAll || (showBig && rPx > 10)) {
+        if (label) {
+          ctx.font = `${14 * dpr}px sans-serif`;
+          const tw = ctx.measureText(label).width;
+          const th = 14 * dpr;
+          const [tx, ty] = placeLabel(sx, sy, rPx, tw, th, labelRects);
+          ctx.fillStyle = `rgba(180,220,180,${a})`;
+          ctx.fillText(label, tx, ty);
+          labelRects.push([tx, ty - th, tx + tw, ty]);
+        }
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  /* ── supernova remnants ── */
+  function drawSNR(
+    ctx: CanvasRenderingContext2D, sc: number, c: ProjCenter,
+    cx: number, cy: number, W: number, H: number, fovDeg: number
+  ) {
+    if (!showSNRRef.current || snrData.current.length === 0) return;
+    const lineW = Math.max(0.4, Math.min(2.2, 30 / fovDeg));
+    const alpha = Math.max(140, Math.min(240, Math.round(600 / fovDeg)));
+    const a = (alpha / 255).toFixed(2);
+    const showAll = fovDeg < 10;
+    const showBig = fovDeg < 30;
+    ctx.lineWidth = lineW;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = `rgba(60,160,255,${a})`;
+    const dpr = window.devicePixelRatio || 1;
+    const labelRects: [number, number, number, number][] = [];
+
+    for (const row of snrData.current) {
+      const [ra, dec, radDeg, label] = row;
+      const [x, y, cc] = stereoFwd(ra, dec, c);
+      if (cc < -0.2) continue;
+      const sx = cx - x * sc;
+      const sy = cy - y * sc;
+      if (sx < -300 || sx > W + 300 || sy < -300 || sy > H + 300) continue;
+      const rPx = Math.max(radDeg * (Math.PI / 180) * sc, SNR_MIN_R);
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (showAll || (showBig && rPx > 10)) {
+        if (label) {
+          ctx.font = `${14 * dpr}px sans-serif`;
+          const tw = ctx.measureText(label).width;
+          const th = 14 * dpr;
+          const [tx, ty] = placeLabel(sx, sy, rPx, tw, th, labelRects);
+          ctx.fillStyle = `rgba(160,200,255,${a})`;
+          ctx.fillText(label, tx, ty);
+          labelRects.push([tx, ty - th, tx + tw, ty]);
+        }
+      }
+    }
+    ctx.setLineDash([]);
+  }
+
+  /* ── DSO (Messier/NGC/IC/Sh2) ── */
+  function drawDSO(
+    ctx: CanvasRenderingContext2D, sc: number, c: ProjCenter,
+    cx: number, cy: number, W: number, H: number, fovDeg: number
+  ) {
+    const data = dsoData.current;
+    if (data.length === 0) return;
+    const catShow = [showMessierRef.current, showNGCRef.current, showICRef.current, showSh2Ref.current];
+    if (!catShow.some(Boolean)) return;
+
+    const lineW = Math.max(0.4, Math.min(2.2, 30 / fovDeg));
+    const alpha = Math.max(100, Math.min(220, Math.round(500 / fovDeg)));
+    const a = (alpha / 255).toFixed(2);
+    const showAll = fovDeg < 5;
+    const showBig = fovDeg < 30;
+    ctx.lineWidth = lineW;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = `rgba(220,220,220,${a})`;
+    const dpr = window.devicePixelRatio || 1;
+    const labelRects: [number, number, number, number][] = [];
+
+    for (const row of data) {
+      const [ra, dec, radDeg, , catCode, label] = row;
+      if (!catShow[catCode]) continue;
+      const [x, y, cc] = stereoFwd(ra, dec, c);
+      if (cc < -0.2) continue;
+      const sx = cx - x * sc;
+      const sy = cy - y * sc;
+      if (sx < -200 || sx > W + 200 || sy < -200 || sy > H + 200) continue;
+      const rPx = Math.max(radDeg * (Math.PI / 180) * sc, DSO_MIN_R);
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (showAll || (showBig && rPx > 10)) {
+        if (label) {
+          ctx.font = `${14 * dpr}px sans-serif`;
+          const tw = ctx.measureText(label).width;
+          const th = 14 * dpr;
+          const [tx, ty] = placeLabel(sx, sy, rPx, tw, th, labelRects);
+          ctx.fillStyle = `rgba(220,220,220,${a})`;
+          ctx.fillText(label, tx, ty);
+          labelRects.push([tx, ty - th, tx + tw, ty]);
+        }
+      }
+    }
+    ctx.setLineDash([]);
   }
 
   /* ── overlays ── */
@@ -603,6 +823,22 @@ export default function SkyMapCanvas() {
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#111118] border-b border-white/5 text-xs text-white/50 shrink-0">
         <span className="font-mono">{coordText}</span>
         <span>滚轮缩放 · 拖动漫游 · 单击图片切换高低分辨率</span>
+      </div>
+
+      {/* Catalog toggle toolbar */}
+      <div className="flex items-center gap-1.5 px-3 py-1 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap">
+        <ToggleBtn label="PN" on={showPN} bg="linear-gradient(90deg,rgba(255,60,60,.7),rgba(255,160,40,.7),rgba(0,200,100,.7))" color="#fff"
+          onClick={() => { const v = !showPN; setShowPN(v); showPNRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="SNR" on={showSNR} bg="rgba(60,160,255,.7)" color="#fff"
+          onClick={() => { const v = !showSNR; setShowSNR(v); showSNRRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="Messier" on={showMessier} bg="rgba(220,220,220,.7)" color="#111"
+          onClick={() => { const v = !showMessier; setShowMessier(v); showMessierRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="NGC" on={showNGC} bg="rgba(220,220,220,.7)" color="#111"
+          onClick={() => { const v = !showNGC; setShowNGC(v); showNGCRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="IC" on={showIC} bg="rgba(220,220,220,.7)" color="#111"
+          onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
+          onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
       </div>
 
       <div className="relative flex-1 min-h-0" ref={containerRef}>
