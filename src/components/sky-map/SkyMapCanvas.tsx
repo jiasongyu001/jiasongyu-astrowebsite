@@ -228,6 +228,13 @@ export default function SkyMapCanvas() {
     drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
     drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
 
+    // Stats (top-right)
+    ctx.fillStyle = "rgba(100,100,160,0.55)";
+    ctx.font = `${12 * dpr}px sans-serif`;
+    const statsText = `${overlays.current.length} 张照片  ${stars.current.length} 颗恒星  ${constSegs.current.length} 星座线段`;
+    const stw = ctx.measureText(statsText).width;
+    ctx.fillText(statsText, W - stw - 8 * dpr, 12 * dpr + 6 * dpr);
+
     // FoV text
     ctx.fillStyle = "rgba(100,100,160,0.7)";
     ctx.font = `${12 * dpr}px sans-serif`;
