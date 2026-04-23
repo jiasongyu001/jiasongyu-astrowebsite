@@ -118,16 +118,25 @@ export default function SkyMapCanvas() {
   const [selectedOverlay, setSelectedOverlay] = useState<Overlay | null>(null);
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
 
+  /* ── search ── */
+  type SearchEntry = { norm: string; label: string; ra: number; dec: number; fov: number };
+  type CatEntry = { prefix: string; num: string; label: string; ra: number; dec: number; fov: number };
+  const searchNames = useRef<SearchEntry[]>([]);
+  const searchCats = useRef<CatEntry[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ label: string; ra: number; dec: number; fov: number; score: number }[]>([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
   const [showPN, setShowPN] = useState(true);
   const [showSNR, setShowSNR] = useState(true);
-  const [showMessier, setShowMessier] = useState(false);
+  const [showMessier, setShowMessier] = useState(true);
   const [showNGC, setShowNGC] = useState(false);
   const [showIC, setShowIC] = useState(false);
   const [showSh2, setShowSh2] = useState(false);
   // Keep refs in sync for draw loop
   const showPNRef = useRef(true);
   const showSNRRef = useRef(true);
-  const showMessierRef = useRef(false);
+  const showMessierRef = useRef(true);
   const showNGCRef = useRef(false);
   const showICRef = useRef(false);
   const showSh2Ref = useRef(false);
@@ -197,9 +206,135 @@ export default function SkyMapCanvas() {
       } else {
         setTimeout(preloadDetails, 2000);
       }
+      // Build search index
+      buildSearchIndex(metaData, dsoData.current);
     })();
     return () => { cancelled = true; };
   }, []);
+
+  /* ── search index ── */
+  const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
+
+  const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B)\s*-?\s*(\d+.*)$/i;
+  const ID_RX = /(?:NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
+  const PAREN_RX = /\((\w+)\s+\d+\)/;
+
+  function buildSearchIndex(metas: Overlay[], dso: DSORow[]) {
+    const names: SearchEntry[] = [];
+    const rawCats: Record<string, CatEntry & { quality: number }> = {};
+    const xrefQ: Record<string, number> = { NGC: 40, SH2: 30, MEL: 20, IC: 10 };
+
+    // Overlays (photos)
+    for (const m of metas) {
+      const parts = m.name.split("_");
+      const display = parts.length >= 4
+        ? `${parts.slice(0, -3).join("_")} (${parts[parts.length - 1]})`
+        : m.name;
+      const fovH = Math.max(m.field_w_deg, m.field_h_deg) * 1.5;
+      const label = `📷 ${display}`;
+      names.push({ norm: normalize(display), label, ra: m.ra, dec: m.dec, fov: fovH });
+      if (parts.length === 4) {
+        names.push({ norm: normalize(parts[0]), label, ra: m.ra, dec: m.dec, fov: fovH });
+      }
+    }
+
+    // DSO catalog
+    for (const row of dso) {
+      const [ra, dec, radDeg, , , nm] = row;
+      if (!nm) continue;
+      const fovD = Math.max(radDeg * 6, 1.0);
+      const label = `⚪ ${nm}`;
+      names.push({ norm: normalize(nm), label, ra, dec, fov: fovD });
+
+      const pm = PAREN_RX.exec(nm);
+      const xc = pm ? pm[1].toUpperCase() : "";
+      const quality = xrefQ[xc] ?? 0;
+
+      const idRx = /(NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
+      let match;
+      while ((match = idRx.exec(nm)) !== null) {
+        const pfx = match[1].toUpperCase().replace(/\s/g, "");
+        const num = match[2];
+        const key = `${pfx}:${num}`;
+        if (!rawCats[key] || quality > rawCats[key].quality) {
+          rawCats[key] = { prefix: pfx, num, label, ra, dec, fov: fovD, quality };
+        }
+      }
+    }
+
+    searchNames.current = names;
+    searchCats.current = Object.values(rawCats).map(({ quality, ...rest }) => rest);
+  }
+
+  function doSearch(query: string, limit = 8) {
+    const q = query.trim();
+    if (!q) return [];
+    const results: { label: string; ra: number; dec: number; fov: number; score: number }[] = [];
+
+    // Phase 1: catalog prefix + number
+    const cm = CAT_PREFIX_RX.exec(q);
+    if (cm) {
+      let qp = cm[1].toUpperCase().replace(/\s/g, "");
+      const qn = cm[2].trim();
+      if (qp === "SH" || qp === "SH2") qp = "SH2";
+      for (const c of searchCats.current) {
+        if (c.prefix !== qp) continue;
+        if (c.num === qn) results.push({ ...c, score: 10000 });
+        else if (c.num.startsWith(qn)) results.push({ ...c, score: 8000 - c.num.length });
+      }
+    }
+
+    // Phase 2: fuzzy name
+    const nq = normalize(q);
+    if (nq) {
+      for (const e of searchNames.current) {
+        if (!e.norm.includes(nq)) continue;
+        let score: number;
+        if (e.norm === nq) score = 5000;
+        else if (e.norm.startsWith(nq)) score = 3000 - e.norm.length;
+        else score = 1000 - e.norm.length;
+        results.push({ label: e.label, ra: e.ra, dec: e.dec, fov: e.fov, score });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    const seen = new Set<string>();
+    const out: typeof results = [];
+    for (const r of results) {
+      if (seen.has(r.label)) continue;
+      seen.add(r.label);
+      out.push(r);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  function handleSearchInput(val: string) {
+    setSearchQuery(val);
+    if (!val.trim()) {
+      setSearchResults([]);
+      setShowSearchDropdown(false);
+      return;
+    }
+    const res = doSearch(val);
+    setSearchResults(res);
+    setShowSearchDropdown(res.length > 0);
+  }
+
+  function jumpTo(ra: number, dec: number, fovVal: number) {
+    centerRA.current = ra;
+    centerDec.current = dec;
+    fov.current = Math.min(fovVal, MAX_FOV);
+    needsDraw.current = true;
+    setShowSearchDropdown(false);
+  }
+
+  function handleSearchSubmit() {
+    if (searchResults.length > 0) {
+      const r = searchResults[0];
+      jumpTo(r.ra, r.dec, r.fov);
+    }
+  }
 
   /* ── draw ── */
   const draw = useCallback(() => {
@@ -846,6 +981,42 @@ export default function SkyMapCanvas() {
           onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; needsDraw.current = true; }} />
         <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
           onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
+
+        {/* Search */}
+        <div className="relative ml-3">
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-white/40">搜索:</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSearchSubmit(); } }}
+              onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
+              onBlur={() => { setTimeout(() => setShowSearchDropdown(false), 200); }}
+              placeholder="天体名称, 回车跳转"
+              className="w-44 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
+            />
+            <button
+              onClick={handleSearchSubmit}
+              className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors"
+            >
+              跳转
+            </button>
+          </div>
+          {showSearchDropdown && searchResults.length > 0 && (
+            <div className="absolute top-full left-6 mt-0.5 w-72 max-h-52 overflow-y-auto rounded bg-[#1a1a2e]/95 border border-white/10 shadow-lg z-50">
+              {searchResults.map((r, i) => (
+                <div
+                  key={i}
+                  className="px-2.5 py-1.5 text-xs text-white/80 hover:bg-indigo-500/30 cursor-pointer truncate"
+                  onMouseDown={(e) => { e.preventDefault(); jumpTo(r.ra, r.dec, r.fov); setSearchQuery(r.label); }}
+                >
+                  {r.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="relative flex-1 min-h-0" ref={containerRef}>
