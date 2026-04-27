@@ -55,3 +55,40 @@ export function computeScale(widthPx: number, fovDeg: number): number {
   const fovRad = Math.max(fovDeg, 0.01) * DEG2RAD;
   return widthPx / (4 * Math.tan(fovRad / 4));
 }
+
+/* ── Galactic ↔ Equatorial conversion (IAU 2000, J2000) ── */
+const _RA_GP  = 192.85948 * DEG2RAD;
+const _DEC_GP = 27.12825  * DEG2RAD;
+const _L_NCP  = 122.93192 * DEG2RAD;
+const _SIN_DG = Math.sin(_DEC_GP);
+const _COS_DG = Math.cos(_DEC_GP);
+
+/** Equatorial (RA°, Dec°) → Galactic (l°, b°) */
+export function eqToGal(raDeg: number, decDeg: number): [number, number] {
+  const ra = raDeg * DEG2RAD;
+  const dec = decDeg * DEG2RAD;
+  const sinDec = Math.sin(dec);
+  const cosDec = Math.cos(dec);
+  const dra = ra - _RA_GP;
+  const sinB = sinDec * _SIN_DG + cosDec * _COS_DG * Math.cos(dra);
+  const b = Math.asin(Math.max(-1, Math.min(1, sinB)));
+  const y = cosDec * Math.sin(dra);
+  const x = sinDec * _COS_DG - cosDec * _SIN_DG * Math.cos(dra);
+  const l = ((_L_NCP - Math.atan2(y, x)) * RAD2DEG % 360 + 360) % 360;
+  return [l, b * RAD2DEG];
+}
+
+/** Galactic (l°, b°) → Equatorial (RA°, Dec°) */
+export function galToEq(lDeg: number, bDeg: number): [number, number] {
+  const l = lDeg * DEG2RAD;
+  const b = bDeg * DEG2RAD;
+  const sinB = Math.sin(b);
+  const cosB = Math.cos(b);
+  const dl = l - _L_NCP;
+  const sinDec = sinB * _SIN_DG + cosB * _COS_DG * Math.cos(dl);
+  const dec = Math.asin(Math.max(-1, Math.min(1, sinDec)));
+  const y = cosB * Math.sin(dl);
+  const x = sinB * _COS_DG - cosB * _SIN_DG * Math.cos(dl);
+  const ra = ((_RA_GP + Math.atan2(y, x)) * RAD2DEG % 360 + 360) % 360;
+  return [ra, dec * RAD2DEG];
+}

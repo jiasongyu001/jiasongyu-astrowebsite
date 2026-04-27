@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
-import { stereoFwd, stereoInv, makeCenter, computeScale } from "./projection";
+import { stereoFwd, stereoInv, makeCenter, computeScale, eqToGal, galToEq } from "./projection";
 import { CONSTELLATION_LINES } from "./constellations";
 import type { ProjCenter } from "./projection";
 
@@ -90,6 +90,49 @@ function ToggleBtn({ label, on, bg, color, onClick }: {
   );
 }
 
+/* ── coordinate jump row ── */
+function CoordJumpRow({ jumpTo }: { jumpTo: (ra: number, dec: number) => void }) {
+  const [raH, setRaH] = useState(""); const [raM, setRaM] = useState(""); const [raS, setRaS] = useState("");
+  const [decD, setDecD] = useState(""); const [decM, setDecM] = useState(""); const [decS, setDecS] = useState("");
+  const [gl, setGl] = useState(""); const [gb, setGb] = useState("");
+
+  const doRaDec = () => {
+    const h = parseFloat(raH || "0"), m = parseFloat(raM || "0"), s = parseFloat(raS || "0");
+    const dd = parseFloat(decD || "0"), dm = parseFloat(decM || "0"), ds = parseFloat(decS || "0");
+    const ra = (h + m / 60 + s / 3600) * 15;
+    const sign = dd < 0 ? -1 : 1;
+    const dec = sign * (Math.abs(dd) + dm / 60 + ds / 3600);
+    jumpTo(((ra % 360) + 360) % 360, Math.max(-90, Math.min(90, dec)));
+  };
+
+  const doGal = () => {
+    const l = parseFloat(gl || "0"), b = parseFloat(gb || "0");
+    const [ra, dec] = galToEq(((l % 360) + 360) % 360, Math.max(-90, Math.min(90, b)));
+    jumpTo(ra, dec);
+  };
+
+  const inp = "w-10 px-1 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
+  return (
+    <div className="flex items-center gap-2 px-3 py-0.5 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap text-xs text-white/50">
+      <span>RA</span>
+      <input className={inp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <input className={inp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <input className={inp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <span>Dec</span>
+      <input className={inp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <input className={inp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <input className={inp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+      <button onClick={doRaDec} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
+      <div className="w-px h-4 bg-white/10 mx-1" />
+      <span>l</span>
+      <input className={`${inp} w-14`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+      <span>b</span>
+      <input className={`${inp} w-14`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+      <button onClick={doGal} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
+    </div>
+  );
+}
+
 export default function SkyMapCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -140,6 +183,22 @@ export default function SkyMapCanvas() {
   const showNGCRef = useRef(false);
   const showICRef = useRef(false);
   const showSh2Ref = useRef(false);
+
+  /* ── grid toggles ── */
+  const [showEqGrid, setShowEqGrid] = useState(true);
+  const [showGalGrid, setShowGalGrid] = useState(false);
+  const showEqGridRef = useRef(true);
+  const showGalGridRef = useRef(false);
+
+  /* ── crosshair ── */
+  const showCrosshairRef = useRef(false);
+
+  /* ── camera simulator ── */
+  type CamConfig = { focal: number; sw: number; sh: number; angle: number; mosX: number; mosY: number; overlap: number };
+  const [showCamSim, setShowCamSim] = useState(false);
+  const [camEntries, setCamEntries] = useState<CamConfig[]>([]);
+  const camEntriesRef = useRef<CamConfig[]>([]);
+  const showCamSimRef = useRef(false);
 
   /* ── load data ── */
   useEffect(() => {
@@ -336,6 +395,32 @@ export default function SkyMapCanvas() {
     }
   }
 
+  /* ── camera entry management ── */
+  function addCamEntry() {
+    const next = [...camEntries, { focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
+    setCamEntries(next);
+    camEntriesRef.current = next;
+    needsDraw.current = true;
+  }
+  function removeCamEntry(idx: number) {
+    const next = camEntries.filter((_, i) => i !== idx);
+    setCamEntries(next);
+    camEntriesRef.current = next;
+    needsDraw.current = true;
+  }
+  function updateCamEntry(idx: number, field: keyof CamConfig, value: string) {
+    const next = camEntries.map((c, i) => {
+      if (i !== idx) return c;
+      const v = parseFloat(value) || 0;
+      const updated = { ...c, [field]: v };
+      if (field === "mosX" || field === "mosY") updated[field] = Math.max(1, Math.round(v));
+      return updated;
+    });
+    setCamEntries(next);
+    camEntriesRef.current = next;
+    needsDraw.current = true;
+  }
+
   /* ── draw ── */
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -355,20 +440,29 @@ export default function SkyMapCanvas() {
     ctx.fillStyle = "#08080f";
     ctx.fillRect(0, 0, W, H);
 
-    drawGraticule(ctx, sc, c, cx, cy, W, H);
+    if (showEqGridRef.current) drawGraticule(ctx, sc, c, cx, cy, W, H);
+    if (showGalGridRef.current) drawGalacticGraticule(ctx, sc, c, cx, cy, W, H);
     drawConstellations(ctx, sc, c, cx, cy, W, H);
     drawStars(ctx, sc, c, cx, cy, W, H);
     drawOverlays(ctx, sc, c, cx, cy, W, H);
     drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
     drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
     drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawCamFov(ctx, sc, cx, cy);
 
-    // Stats (top-right)
-    ctx.fillStyle = "rgba(100,100,160,0.55)";
-    ctx.font = `${12 * dpr}px sans-serif`;
-    const statsText = `${stars.current.length} 颗恒星  ${constSegs.current.length} 星座线段  ${overlays.current.length} 张深度曝光照片`;
-    const stw = ctx.measureText(statsText).width;
-    ctx.fillText(statsText, W - stw - 8 * dpr, 12 * dpr + 6 * dpr);
+    // Crosshair
+    if (showCrosshairRef.current) {
+      const chSize = 12 * dpr;
+      const gap = 3 * dpr;
+      ctx.strokeStyle = "rgba(255,80,80,0.8)";
+      ctx.lineWidth = 1.2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(cx - chSize, cy); ctx.lineTo(cx - gap, cy);
+      ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + chSize, cy);
+      ctx.moveTo(cx, cy - chSize); ctx.lineTo(cx, cy - gap);
+      ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + chSize);
+      ctx.stroke();
+    }
 
     // FoV text
     ctx.fillStyle = "rgba(100,100,160,0.7)";
@@ -403,6 +497,7 @@ export default function SkyMapCanvas() {
 
     // Dec lines every 30°
     for (let dec = -60; dec < 90; dec += 30) {
+      ctx.lineWidth = dec === 0 ? 2 : 1;
       ctx.beginPath();
       let penDown = false;
       for (let ra = 0; ra <= 360; ra += 2) {
@@ -416,6 +511,7 @@ export default function SkyMapCanvas() {
       }
       ctx.stroke();
     }
+    ctx.lineWidth = 1;
 
     // RA labels
     const dpr = window.devicePixelRatio || 1;
@@ -429,6 +525,152 @@ export default function SkyMapCanvas() {
       if (sx > 20 * dpr && sx < W - 20 * dpr && sy > 20 * dpr && sy < H - 20 * dpr) {
         ctx.fillText(`${raH}h`, sx + 4 * dpr, sy - 4 * dpr);
       }
+    }
+  }
+
+  /* ── galactic graticule ── */
+  function drawGalacticGraticule(
+    ctx: CanvasRenderingContext2D, sc: number, c: ProjCenter,
+    cx: number, cy: number, W: number, H: number
+  ) {
+    ctx.strokeStyle = "rgba(200,200,220,0.18)";
+    // Galactic longitude lines every 30°
+    for (let lDeg = 0; lDeg < 360; lDeg += 30) {
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      let penDown = false;
+      for (let bDeg = -90; bDeg <= 90; bDeg += 2) {
+        const [eqRa, eqDec] = galToEq(lDeg, bDeg);
+        const [x, y, cc] = stereoFwd(eqRa, eqDec, c);
+        if (cc < -0.2) { penDown = false; continue; }
+        const sx = cx - x * sc;
+        const sy = cy - y * sc;
+        if (sx < -W || sx > 2 * W || sy < -H || sy > 2 * H) { penDown = false; continue; }
+        if (!penDown) { ctx.moveTo(sx, sy); penDown = true; }
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+    // Galactic latitude lines every 15°
+    for (let bDeg = -75; bDeg < 90; bDeg += 15) {
+      ctx.lineWidth = bDeg === 0 ? 2 : 1;
+      ctx.beginPath();
+      let penDown = false;
+      for (let lDeg = 0; lDeg <= 360; lDeg += 2) {
+        const [eqRa, eqDec] = galToEq(lDeg, bDeg);
+        const [x, y, cc] = stereoFwd(eqRa, eqDec, c);
+        if (cc < -0.2) { penDown = false; continue; }
+        const sx = cx - x * sc;
+        const sy = cy - y * sc;
+        if (sx < -W || sx > 2 * W || sy < -H || sy > 2 * H) { penDown = false; continue; }
+        if (!penDown) { ctx.moveTo(sx, sy); penDown = true; }
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    // l labels at b=0
+    const dpr = window.devicePixelRatio || 1;
+    ctx.fillStyle = "rgba(200,200,220,0.31)";
+    ctx.font = `${11 * dpr}px sans-serif`;
+    for (let lDeg = 0; lDeg < 360; lDeg += 30) {
+      const [eqRa, eqDec] = galToEq(lDeg, 0);
+      const [x, y, cc] = stereoFwd(eqRa, eqDec, c);
+      if (cc <= 0) continue;
+      const sx = cx - x * sc;
+      const sy = cy - y * sc;
+      if (sx > 20 * dpr && sx < W - 20 * dpr && sy > 20 * dpr && sy < H - 20 * dpr) {
+        ctx.fillText(`l${lDeg}°`, sx + 4 * dpr, sy - 4 * dpr);
+      }
+    }
+  }
+
+  /* ── camera FoV simulation ── */
+  function drawCamFov(
+    ctx: CanvasRenderingContext2D, sc: number, cx: number, cy: number
+  ) {
+    if (!showCamSimRef.current) return;
+    const cfgs = camEntriesRef.current;
+    if (cfgs.length === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.font = `${11 * dpr}px sans-serif`;
+
+    for (const cfg of cfgs) {
+      const { focal, sw, sh, angle, mosX, mosY, overlap } = cfg;
+      if (focal <= 0 || sw <= 0 || sh <= 0) continue;
+      const hwRad = Math.atan(sw / (2 * focal));
+      const hhRad = Math.atan(sh / (2 * focal));
+      const pw = 2 * Math.tan(hwRad / 2) * sc;
+      const ph = 2 * Math.tan(hhRad / 2) * sc;
+      const cosA = Math.cos(angle * Math.PI / 180);
+      const sinA = Math.sin(angle * Math.PI / 180);
+      const olap = Math.max(0, Math.min(99, overlap)) / 100;
+      const stepW = pw * 2 * (1 - olap);
+      const stepH = ph * 2 * (1 - olap);
+      const totalHW = mosX > 1 ? pw + stepW * (mosX - 1) / 2 : pw;
+      const totalHH = mosY > 1 ? ph + stepH * (mosY - 1) / 2 : ph;
+
+      const rot = (x: number, y: number): [number, number] => [
+        x * cosA - y * sinA, x * sinA + y * cosA
+      ];
+
+      // Draw each mosaic panel
+      ctx.strokeStyle = "rgba(255,60,60,0.78)";
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.setLineDash([]);
+      for (let ix = 0; ix < mosX; ix++) {
+        for (let iy = 0; iy < mosY; iy++) {
+          const pcx = mosX > 1 ? stepW * (ix - (mosX - 1) / 2) : 0;
+          const pcy = mosY > 1 ? stepH * (iy - (mosY - 1) / 2) : 0;
+          const corners: [number, number][] = [
+            [pcx - pw, pcy - ph], [pcx + pw, pcy - ph],
+            [pcx + pw, pcy + ph], [pcx - pw, pcy + ph]
+          ];
+          ctx.beginPath();
+          for (let k = 0; k < 4; k++) {
+            const [rx, ry] = rot(corners[k][0], corners[k][1]);
+            if (k === 0) ctx.moveTo(cx + rx, cy + ry);
+            else ctx.lineTo(cx + rx, cy + ry);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+
+      // Outer mosaic boundary
+      if (mosX > 1 || mosY > 1) {
+        ctx.strokeStyle = "rgba(255,120,60,0.7)";
+        ctx.lineWidth = 1 * dpr;
+        ctx.setLineDash([6 * dpr, 4 * dpr]);
+        const outer: [number, number][] = [
+          [-totalHW, -totalHH], [totalHW, -totalHH],
+          [totalHW, totalHH], [-totalHW, totalHH]
+        ];
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const [rx, ry] = rot(outer[k][0], outer[k][1]);
+          if (k === 0) ctx.moveTo(cx + rx, cy + ry);
+          else ctx.lineTo(cx + rx, cy + ry);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // FoV label
+      const fovW = hwRad * 2 * 180 / Math.PI;
+      const fovH = hhRad * 2 * 180 / Math.PI;
+      let label: string;
+      if (mosX > 1 || mosY > 1) {
+        const tfW = fovW * mosX - fovW * olap * (mosX - 1);
+        const tfH = fovH * mosY - fovH * olap * (mosY - 1);
+        label = `${fovW.toFixed(2)}°×${fovH.toFixed(2)}°  mosaic ${tfW.toFixed(1)}°×${tfH.toFixed(1)}°`;
+      } else {
+        label = `${fovW.toFixed(2)}°×${fovH.toFixed(2)}°`;
+      }
+      const [trx, try_] = rot(totalHW, -totalHH);
+      ctx.fillStyle = "rgba(255,100,100,0.86)";
+      ctx.fillText(label, cx + trx + 4 * dpr, cy + try_ - 4 * dpr);
     }
   }
 
@@ -850,6 +1092,7 @@ export default function SkyMapCanvas() {
       centerRA.current = ((centerRA.current + dx * fovPerPx / Math.max(cosDec, 0.05)) % 360 + 360) % 360;
       centerDec.current = Math.max(-90, Math.min(90, centerDec.current + dy * fovPerPx));
       dragLast.current = pos;
+      showCrosshairRef.current = false;
       needsDraw.current = true;
     }
 
@@ -869,7 +1112,8 @@ export default function SkyMapCanvas() {
     const dAbs = Math.abs(decDeg);
     const dd = Math.floor(dAbs);
     const dm = Math.floor((dAbs - dd) * 60);
-    setCoordText(`RA: ${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m ${s}s   Dec: ${sign}${String(dd).padStart(2, "0")}° ${String(dm).padStart(2, "0")}'`);
+    const [gl, gb] = eqToGal(raDeg, decDeg);
+    setCoordText(`RA: ${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m ${s}s   Dec: ${sign}${String(dd).padStart(2, "0")}° ${String(dm).padStart(2, "0")}'   l: ${gl.toFixed(2)}°  b: ${gb.toFixed(2)}°`);
 
     // Hover detection
     const hit = hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2);
@@ -982,6 +1226,30 @@ export default function SkyMapCanvas() {
         <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
           onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
 
+        <div className="w-px h-4 bg-white/10 mx-1" />
+
+        {/* Grid toggles */}
+        <ToggleBtn label="赤道网格" on={showEqGrid} bg="rgba(34,34,68,.8)" color="#aaf"
+          onClick={() => { const v = !showEqGrid; setShowEqGrid(v); showEqGridRef.current = v; needsDraw.current = true; }} />
+        <ToggleBtn label="银道网格" on={showGalGrid} bg="rgba(200,200,220,.35)" color="#fff"
+          onClick={() => { const v = !showGalGrid; setShowGalGrid(v); showGalGridRef.current = v; needsDraw.current = true; }} />
+
+        <div className="w-px h-4 bg-white/10 mx-1" />
+
+        {/* Camera sim toggle */}
+        <ToggleBtn label="📷相机模拟" on={showCamSim} bg="rgba(200,60,60,.7)" color="#fff"
+          onClick={() => {
+            const v = !showCamSim;
+            setShowCamSim(v);
+            showCamSimRef.current = v;
+            if (v && camEntries.length === 0) {
+              const init: CamConfig[] = [{ focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
+              setCamEntries(init);
+              camEntriesRef.current = init;
+            }
+            needsDraw.current = true;
+          }} />
+
         {/* Search */}
         <div className="relative ml-3">
           <div className="flex items-center gap-1">
@@ -1019,6 +1287,13 @@ export default function SkyMapCanvas() {
         </div>
       </div>
 
+      {/* Coordinate jump row */}
+      <CoordJumpRow jumpTo={(ra, dec) => {
+        centerRA.current = ra; centerDec.current = dec;
+        showCrosshairRef.current = true;
+        needsDraw.current = true;
+      }} />
+
       <div className="relative flex-1 min-h-0" ref={containerRef}>
         <canvas
           ref={canvasRef}
@@ -1042,6 +1317,51 @@ export default function SkyMapCanvas() {
         {detailLoading && (
           <div className="absolute top-2 right-2 rounded bg-black/75 px-3 py-1.5 text-xs text-yellow-200 pointer-events-none animate-pulse">
             加载高清图: {detailLoading}...
+          </div>
+        )}
+
+        {/* Camera simulator panel */}
+        {showCamSim && (
+          <div className="absolute top-2 right-2 w-72 rounded-lg bg-black/85 backdrop-blur-sm border border-white/10 p-2.5 text-xs text-white/80 z-40 max-h-[60vh] overflow-y-auto">
+            <div className="font-semibold text-sm text-white/90 mb-1.5">📷 相机视场模拟</div>
+            {camEntries.map((cfg, i) => (
+              <div key={i} className="mb-2 p-1.5 rounded bg-white/5 border border-white/5">
+                <div className="flex items-center gap-1 flex-wrap mb-1">
+                  <span className="text-white/40">f</span>
+                  <input type="number" value={cfg.focal} onChange={e => updateCamEntry(i, "focal", e.target.value)}
+                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">mm</span>
+                  <input type="number" value={cfg.sw} onChange={e => updateCamEntry(i, "sw", e.target.value)}
+                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">×</span>
+                  <input type="number" value={cfg.sh} onChange={e => updateCamEntry(i, "sh", e.target.value)}
+                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">mm</span>
+                  <span className="text-white/40">∠</span>
+                  <input type="number" value={cfg.angle} onChange={e => updateCamEntry(i, "angle", e.target.value)}
+                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">°</span>
+                  <button onClick={() => removeCamEntry(i)}
+                    className="ml-auto px-1 py-0.5 rounded bg-red-500/40 text-white/80 hover:bg-red-400/60 text-xs">×</button>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-white/40">Mosaic</span>
+                  <input type="number" value={cfg.mosX} onChange={e => updateCamEntry(i, "mosX", e.target.value)}
+                    className="w-7 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">×</span>
+                  <input type="number" value={cfg.mosY} onChange={e => updateCamEntry(i, "mosY", e.target.value)}
+                    className="w-7 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">重叠</span>
+                  <input type="number" value={cfg.overlap} onChange={e => updateCamEntry(i, "overlap", e.target.value)}
+                    className="w-9 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                  <span className="text-white/40">%</span>
+                </div>
+              </div>
+            ))}
+            <button onClick={addCamEntry}
+              className="w-full py-1 rounded bg-indigo-500/40 text-white/80 hover:bg-indigo-400/60 text-xs">
+              + 添加视场
+            </button>
           </div>
         )}
 
