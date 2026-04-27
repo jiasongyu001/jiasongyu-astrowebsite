@@ -90,8 +90,16 @@ function ToggleBtn({ label, on, bg, color, onClick }: {
   );
 }
 
-/* ── coordinate jump row ── */
-function CoordJumpRow({ jumpTo }: { jumpTo: (ra: number, dec: number) => void }) {
+/* ── coordinate jump row (includes name search + equatorial + galactic) ── */
+function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, searchResults, showDropdown, setShowDropdown }: {
+  jumpTo: (ra: number, dec: number, fov?: number) => void;
+  searchQuery: string;
+  onSearchInput: (v: string) => void;
+  onSearchSubmit: () => void;
+  searchResults: { label: string; ra: number; dec: number; fov?: number }[];
+  showDropdown: boolean;
+  setShowDropdown: (v: boolean) => void;
+}) {
   const [raH, setRaH] = useState(""); const [raM, setRaM] = useState(""); const [raS, setRaS] = useState("");
   const [decD, setDecD] = useState(""); const [decM, setDecM] = useState(""); const [decS, setDecS] = useState("");
   const [gl, setGl] = useState(""); const [gb, setGb] = useState("");
@@ -113,20 +121,54 @@ function CoordJumpRow({ jumpTo }: { jumpTo: (ra: number, dec: number) => void })
 
   const inp = "w-10 px-1 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
   return (
-    <div className="flex items-center gap-2 px-3 py-0.5 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap text-xs text-white/50">
-      <span>RA</span>
+    <div className="flex items-center gap-1.5 px-3 py-0.5 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap text-xs text-white/50">
+      {/* ── Name search ── */}
+      <div className="relative flex items-center gap-1">
+        <span className="text-white/40">名称搜索</span>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSearchSubmit(); } }}
+          onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+          onBlur={() => { setTimeout(() => setShowDropdown(false), 200); }}
+          placeholder="天体名称"
+          className="w-36 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
+        />
+        <button onClick={onSearchSubmit} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors">跳转</button>
+        {showDropdown && searchResults.length > 0 && (
+          <div className="absolute top-full left-0 mt-0.5 w-72 max-h-52 overflow-y-auto rounded bg-[#1a1a2e]/95 border border-white/10 shadow-lg z-50">
+            {searchResults.map((r, i) => (
+              <div key={i} className="px-2.5 py-1.5 text-xs text-white/80 hover:bg-indigo-500/30 cursor-pointer truncate"
+                onMouseDown={(e) => { e.preventDefault(); jumpTo(r.ra, r.dec, r.fov); onSearchInput(r.label); }}>
+                {r.label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="w-px h-4 bg-white/10 mx-1.5" />
+
+      {/* ── Equatorial coordinate search ── */}
+      <span className="text-white/40">赤道坐标</span>
+      <span>RA(赤经)</span>
       <input className={inp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
       <input className={inp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
       <input className={inp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <span>Dec</span>
+      <span>Dec(赤纬)</span>
       <input className={inp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
       <input className={inp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
       <input className={inp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
       <button onClick={doRaDec} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
-      <div className="w-px h-4 bg-white/10 mx-1" />
-      <span>l</span>
+
+      <div className="w-px h-4 bg-white/10 mx-1.5" />
+
+      {/* ── Galactic coordinate search ── */}
+      <span className="text-white/40">银道坐标</span>
+      <span>l(银经)</span>
       <input className={`${inp} w-14`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
-      <span>b</span>
+      <span>b(银纬)</span>
       <input className={`${inp} w-14`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
       <button onClick={doGal} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
     </div>
@@ -1237,7 +1279,7 @@ export default function SkyMapCanvas() {
         <div className="w-px h-4 bg-white/10 mx-1" />
 
         {/* Camera sim toggle */}
-        <ToggleBtn label="📷相机模拟" on={showCamSim} bg="rgba(200,60,60,.7)" color="#fff"
+        <button
           onClick={() => {
             const v = !showCamSim;
             setShowCamSim(v);
@@ -1248,51 +1290,32 @@ export default function SkyMapCanvas() {
               camEntriesRef.current = init;
             }
             needsDraw.current = true;
-          }} />
-
-        {/* Search */}
-        <div className="relative ml-3">
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-white/40">搜索:</span>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleSearchInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSearchSubmit(); } }}
-              onFocus={() => { if (searchResults.length > 0) setShowSearchDropdown(true); }}
-              onBlur={() => { setTimeout(() => setShowSearchDropdown(false), 200); }}
-              placeholder="天体名称, 回车跳转"
-              className="w-44 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
-            />
-            <button
-              onClick={handleSearchSubmit}
-              className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors"
-            >
-              跳转
-            </button>
-          </div>
-          {showSearchDropdown && searchResults.length > 0 && (
-            <div className="absolute top-full left-6 mt-0.5 w-72 max-h-52 overflow-y-auto rounded bg-[#1a1a2e]/95 border border-white/10 shadow-lg z-50">
-              {searchResults.map((r, i) => (
-                <div
-                  key={i}
-                  className="px-2.5 py-1.5 text-xs text-white/80 hover:bg-indigo-500/30 cursor-pointer truncate"
-                  onMouseDown={(e) => { e.preventDefault(); jumpTo(r.ra, r.dec, r.fov); setSearchQuery(r.label); }}
-                >
-                  {r.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          }}
+          className={`px-2.5 py-0.5 rounded text-xs font-semibold transition-all select-none border ${
+            showCamSim
+              ? "bg-red-500/70 border-red-400/60 text-white shadow-[0_0_8px_rgba(255,60,60,.4)]"
+              : "bg-transparent border-amber-400/50 text-amber-300/90 hover:bg-amber-500/15"
+          }`}
+        >
+          📷 相机视场模拟
+        </button>
       </div>
 
-      {/* Coordinate jump row */}
-      <CoordJumpRow jumpTo={(ra, dec) => {
-        centerRA.current = ra; centerDec.current = dec;
-        showCrosshairRef.current = true;
-        needsDraw.current = true;
-      }} />
+      {/* Coordinate + name search row */}
+      <CoordJumpRow
+        jumpTo={(ra, dec, f) => {
+          centerRA.current = ra; centerDec.current = dec;
+          if (f !== undefined) fov.current = f;
+          showCrosshairRef.current = true;
+          needsDraw.current = true;
+        }}
+        searchQuery={searchQuery}
+        onSearchInput={handleSearchInput}
+        onSearchSubmit={handleSearchSubmit}
+        searchResults={searchResults}
+        showDropdown={showSearchDropdown}
+        setShowDropdown={setShowSearchDropdown}
+      />
 
       <div className="relative flex-1 min-h-0" ref={containerRef}>
         <canvas
