@@ -119,7 +119,7 @@ function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, sear
     jumpTo(ra, dec);
   };
 
-  const inp = "w-10 px-1 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
+  const inp = "w-20 px-1.5 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
   return (
     <div className="flex items-center gap-1.5 px-3 py-0.5 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap text-xs text-white/50">
       {/* ── Name search ── */}
@@ -133,7 +133,7 @@ function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, sear
           onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
           onBlur={() => { setTimeout(() => setShowDropdown(false), 200); }}
           placeholder="天体名称"
-          className="w-36 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
+          className="w-48 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
         />
         <button onClick={onSearchSubmit} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors">跳转</button>
         {showDropdown && searchResults.length > 0 && (
@@ -167,9 +167,9 @@ function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, sear
       {/* ── Galactic coordinate search ── */}
       <span className="text-white/40">银道坐标</span>
       <span>l(银经)</span>
-      <input className={`${inp} w-14`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+      <input className={`${inp} w-28`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
       <span>b(银纬)</span>
-      <input className={`${inp} w-14`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+      <input className={`${inp} w-28`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
       <button onClick={doGal} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
     </div>
   );
@@ -1345,24 +1345,24 @@ export default function SkyMapCanvas() {
 
         {/* Camera simulator panel */}
         {showCamSim && (
-          <div className="absolute top-2 right-2 w-72 rounded-lg bg-black/85 backdrop-blur-sm border border-white/10 p-2.5 text-xs text-white/80 z-40 max-h-[60vh] overflow-y-auto">
+          <div className="absolute top-2 right-2 w-80 rounded-lg bg-black/85 backdrop-blur-sm border border-white/10 p-2.5 text-xs text-white/80 z-40 max-h-[60vh] overflow-y-auto">
             <div className="font-semibold text-sm text-white/90 mb-1.5">📷 相机视场模拟</div>
             {camEntries.map((cfg, i) => (
               <div key={i} className="mb-2 p-1.5 rounded bg-white/5 border border-white/5">
                 <div className="flex items-center gap-1 flex-wrap mb-1">
                   <span className="text-white/40">f</span>
                   <input type="number" value={cfg.focal} onChange={e => updateCamEntry(i, "focal", e.target.value)}
-                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-20 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">mm</span>
                   <input type="number" value={cfg.sw} onChange={e => updateCamEntry(i, "sw", e.target.value)}
-                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">×</span>
                   <input type="number" value={cfg.sh} onChange={e => updateCamEntry(i, "sh", e.target.value)}
-                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">mm</span>
                   <span className="text-white/40">∠</span>
                   <input type="number" value={cfg.angle} onChange={e => updateCamEntry(i, "angle", e.target.value)}
-                    className="w-9 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">°</span>
                   <button onClick={() => removeCamEntry(i)}
                     className="ml-auto px-1 py-0.5 rounded bg-red-500/40 text-white/80 hover:bg-red-400/60 text-xs">×</button>
@@ -1370,13 +1370,13 @@ export default function SkyMapCanvas() {
                 <div className="flex items-center gap-1 flex-wrap">
                   <span className="text-white/40">Mosaic</span>
                   <input type="number" value={cfg.mosX} onChange={e => updateCamEntry(i, "mosX", e.target.value)}
-                    className="w-7 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">×</span>
                   <input type="number" value={cfg.mosY} onChange={e => updateCamEntry(i, "mosY", e.target.value)}
-                    className="w-7 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">重叠</span>
                   <input type="number" value={cfg.overlap} onChange={e => updateCamEntry(i, "overlap", e.target.value)}
-                    className="w-9 px-0.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    className="w-16 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
                   <span className="text-white/40">%</span>
                 </div>
               </div>
