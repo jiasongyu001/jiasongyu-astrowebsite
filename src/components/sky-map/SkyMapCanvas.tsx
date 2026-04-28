@@ -291,22 +291,7 @@ export default function SkyMapCanvas() {
       overlays.current = metaData;
       needsDraw.current = true;
 
-      // Preload all detail images in background (idle priority)
-      const preloadDetails = () => {
-        for (const ov of metaData) {
-          if (!ov.detailImg) {
-            const dimg = new Image();
-            dimg.src = `/skymap/details/${encodeURIComponent(ov.name)}.webp`;
-            dimg.onload = () => { needsDraw.current = true; };
-            ov.detailImg = dimg;
-          }
-        }
-      };
-      if ('requestIdleCallback' in window) {
-        (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(preloadDetails);
-      } else {
-        setTimeout(preloadDetails, 2000);
-      }
+      // Detail images are loaded on-demand when user clicks an overlay
       // Build search index
       buildSearchIndex(metaData, dsoData.current);
     })();
@@ -1336,10 +1321,15 @@ export default function SkyMapCanvas() {
           </div>
         )}
 
-        {/* Detail loading indicator */}
+        {/* Detail loading spinner */}
         {detailLoading && (
-          <div className="absolute top-2 right-2 rounded bg-black/75 px-3 py-1.5 text-xs text-yellow-200 pointer-events-none animate-pulse">
-            加载高清图: {detailLoading}...
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 rounded-xl bg-black/80 backdrop-blur-sm px-5 py-4 pointer-events-none z-50">
+            <svg className="animate-spin h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-xs text-white/80">加载高清图中...</span>
+            <span className="text-xs text-white/40 max-w-[200px] truncate">{parseFilename(detailLoading).target}</span>
           </div>
         )}
 
