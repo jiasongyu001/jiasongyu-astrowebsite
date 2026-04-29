@@ -23,6 +23,9 @@ export default function SkyMapPage() {
             <h1 className="text-lg font-bold tracking-tight">全天深度曝光参考图</h1>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 px-3 py-0.5 text-yellow-300 font-medium">
+              滚轮缩放 · 拖动漫游 · 单击图片切换高低分辨率
+            </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-cyan-400">
               立体投影
             </span>

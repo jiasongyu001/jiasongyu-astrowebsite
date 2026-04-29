@@ -79,7 +79,7 @@ function ToggleBtn({ label, on, bg, color, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="px-2 py-0.5 rounded text-xs font-medium transition-all select-none"
+      className="px-2.5 py-1 rounded text-[13px] font-medium transition-all select-none"
       style={{
         background: on ? bg : "rgba(60,60,60,.7)",
         color: on ? color : "#888",
@@ -90,8 +90,8 @@ function ToggleBtn({ label, on, bg, color, onClick }: {
   );
 }
 
-/* ── coordinate jump row (includes name search + equatorial + galactic) ── */
-function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, searchResults, showDropdown, setShowDropdown }: {
+/* ── sidebar coordinate / search section ── */
+function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, searchResults, showDropdown, setShowDropdown }: {
   jumpTo: (ra: number, dec: number, fov?: number) => void;
   searchQuery: string;
   onSearchInput: (v: string) => void;
@@ -119,25 +119,27 @@ function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, sear
     jumpTo(ra, dec);
   };
 
-  const inp = "w-20 px-1.5 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
+  const inp = "w-[4rem] px-1.5 py-1 rounded text-[13px] bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
   return (
-    <div className="flex items-center gap-1.5 px-3 py-0.5 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap text-xs text-white/50">
+    <>
       {/* ── Name search ── */}
-      <div className="relative flex items-center gap-1">
-        <span className="text-white/40">名称搜索</span>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSearchSubmit(); } }}
-          onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
-          onBlur={() => { setTimeout(() => setShowDropdown(false), 200); }}
-          placeholder="天体名称"
-          className="w-48 px-2 py-0.5 rounded text-xs bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
-        />
-        <button onClick={onSearchSubmit} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors">跳转</button>
+      <div className="relative">
+        <div className="text-white/40 text-[13px] mb-1">名称搜索</div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onSearchSubmit(); } }}
+            onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+            onBlur={() => { setTimeout(() => setShowDropdown(false), 200); }}
+            placeholder="天体名称"
+            className="flex-1 min-w-0 px-2 py-1 rounded text-[13px] bg-white/5 border border-white/10 text-white/80 placeholder:text-white/20 outline-none focus:border-indigo-400/50"
+          />
+          <button onClick={onSearchSubmit} className="px-2.5 py-1 rounded text-[13px] bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70 transition-colors shrink-0">跳转</button>
+        </div>
         {showDropdown && searchResults.length > 0 && (
-          <div className="absolute top-full left-0 mt-0.5 w-72 max-h-52 overflow-y-auto rounded bg-[#1a1a2e]/95 border border-white/10 shadow-lg z-50">
+          <div className="absolute top-full left-0 mt-0.5 w-full max-h-52 overflow-y-auto rounded bg-[#1a1a2e]/95 border border-white/10 shadow-lg z-50">
             {searchResults.map((r, i) => (
               <div key={i} className="px-2.5 py-1.5 text-xs text-white/80 hover:bg-indigo-500/30 cursor-pointer truncate"
                 onMouseDown={(e) => { e.preventDefault(); jumpTo(r.ra, r.dec, r.fov); onSearchInput(r.label); }}>
@@ -148,30 +150,42 @@ function CoordJumpRow({ jumpTo, searchQuery, onSearchInput, onSearchSubmit, sear
         )}
       </div>
 
-      <div className="w-px h-4 bg-white/10 mx-1.5" />
+      <div className="h-px bg-white/5 my-1.5" />
 
-      {/* ── Equatorial coordinate search ── */}
-      <span className="text-white/40">赤道坐标</span>
-      <span>RA(赤经)</span>
-      <input className={inp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <input className={inp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <input className={inp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <span>Dec(赤纬)</span>
-      <input className={inp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <input className={inp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <input className={inp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-      <button onClick={doRaDec} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
+      {/* ── Equatorial coordinate jump ── */}
+      <div>
+        <div className="text-white/40 text-[13px] mb-1">赤道坐标</div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-white/50 text-[13px] w-14 shrink-0">RA 赤经</span>
+          <input className={inp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={inp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={inp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+        </div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-white/50 text-[13px] w-14 shrink-0">Dec 赤纬</span>
+          <input className={inp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={inp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={inp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+        </div>
+        <button onClick={doRaDec} className="w-full py-1 rounded text-[13px] bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
+      </div>
 
-      <div className="w-px h-4 bg-white/10 mx-1.5" />
+      <div className="h-px bg-white/5 my-1.5" />
 
-      {/* ── Galactic coordinate search ── */}
-      <span className="text-white/40">银道坐标</span>
-      <span>l(银经)</span>
-      <input className={`${inp} w-28`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
-      <span>b(银纬)</span>
-      <input className={`${inp} w-28`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
-      <button onClick={doGal} className="px-1.5 py-0.5 rounded text-xs bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
-    </div>
+      {/* ── Galactic coordinate jump ── */}
+      <div>
+        <div className="text-white/40 text-[13px] mb-1">银道坐标</div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-white/50 text-[13px] w-14 shrink-0">l 银经</span>
+          <input className={`${inp} flex-1`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+        </div>
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-white/50 text-[13px] w-14 shrink-0">b 银纬</span>
+          <input className={`${inp} flex-1`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+        </div>
+        <button onClick={doGal} className="w-full py-1 rounded text-[13px] bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
+      </div>
+    </>
   );
 }
 
@@ -1071,6 +1085,14 @@ export default function SkyMapCanvas() {
     handleResize();
     window.addEventListener("resize", handleResize);
 
+    // Use ResizeObserver to detect container size changes (e.g. sidebar layout)
+    const container = containerRef.current;
+    let ro: ResizeObserver | null = null;
+    if (container) {
+      ro = new ResizeObserver(() => handleResize());
+      ro.observe(container);
+    }
+
     const canvas = canvasRef.current;
     canvas?.addEventListener("wheel", wheelHandler, { passive: false });
 
@@ -1085,6 +1107,7 @@ export default function SkyMapCanvas() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      ro?.disconnect();
       canvas?.removeEventListener("wheel", wheelHandler);
       cancelAnimationFrame(animId.current);
     };
@@ -1231,78 +1254,134 @@ export default function SkyMapCanvas() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full">
-      {/* top bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#111118] border-b border-white/5 text-xs text-white/50 shrink-0">
-        <span className="font-mono">{coordText}</span>
-        <span>滚轮缩放 · 拖动漫游 · 单击图片切换高低分辨率</span>
-      </div>
+    <div className="flex flex-row h-full w-full">
+      {/* ── Left sidebar ── */}
+      <div className="w-[300px] shrink-0 bg-[#111118] border-r border-white/5 flex flex-col overflow-y-auto text-[13px] text-white/50">
+        {/* Coord display */}
+        <div className="px-3 py-2 border-b border-white/5 font-mono text-[13px] leading-relaxed text-white/50">
+          {coordText}
+        </div>
 
-      {/* Catalog toggle toolbar */}
-      <div className="flex items-center gap-1.5 px-3 py-1 bg-[#111118] border-b border-white/5 shrink-0 flex-wrap">
-        <ToggleBtn label="PN" on={showPN} bg="linear-gradient(90deg,rgba(255,60,60,.7),rgba(255,160,40,.7),rgba(0,200,100,.7))" color="#fff"
-          onClick={() => { const v = !showPN; setShowPN(v); showPNRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="SNR" on={showSNR} bg="rgba(60,160,255,.7)" color="#fff"
-          onClick={() => { const v = !showSNR; setShowSNR(v); showSNRRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="Messier" on={showMessier} bg="rgba(220,220,220,.7)" color="#111"
-          onClick={() => { const v = !showMessier; setShowMessier(v); showMessierRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="NGC" on={showNGC} bg="rgba(220,220,220,.7)" color="#111"
-          onClick={() => { const v = !showNGC; setShowNGC(v); showNGCRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="IC" on={showIC} bg="rgba(220,220,220,.7)" color="#111"
-          onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
-          onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
-
-        <div className="w-px h-4 bg-white/10 mx-1" />
+        {/* Catalog toggles */}
+        <div className="px-3 py-2 border-b border-white/5">
+          <div className="text-white/40 text-[13px] mb-1">天体目录</div>
+          <div className="flex flex-wrap gap-1">
+            <ToggleBtn label="PN" on={showPN} bg="linear-gradient(90deg,rgba(255,60,60,.7),rgba(255,160,40,.7),rgba(0,200,100,.7))" color="#fff"
+              onClick={() => { const v = !showPN; setShowPN(v); showPNRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="SNR" on={showSNR} bg="rgba(60,160,255,.7)" color="#fff"
+              onClick={() => { const v = !showSNR; setShowSNR(v); showSNRRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="Messier" on={showMessier} bg="rgba(220,220,220,.7)" color="#111"
+              onClick={() => { const v = !showMessier; setShowMessier(v); showMessierRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="NGC" on={showNGC} bg="rgba(220,220,220,.7)" color="#111"
+              onClick={() => { const v = !showNGC; setShowNGC(v); showNGCRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="IC" on={showIC} bg="rgba(220,220,220,.7)" color="#111"
+              onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
+              onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
+          </div>
+        </div>
 
         {/* Grid toggles */}
-        <ToggleBtn label="赤道网格" on={showEqGrid} bg="rgba(34,34,68,.8)" color="#aaf"
-          onClick={() => { const v = !showEqGrid; setShowEqGrid(v); showEqGridRef.current = v; needsDraw.current = true; }} />
-        <ToggleBtn label="银道网格" on={showGalGrid} bg="rgba(200,200,220,.35)" color="#fff"
-          onClick={() => { const v = !showGalGrid; setShowGalGrid(v); showGalGridRef.current = v; needsDraw.current = true; }} />
+        <div className="px-3 py-2 border-b border-white/5">
+          <div className="text-white/40 text-[13px] mb-1">坐标网格</div>
+          <div className="flex flex-wrap gap-1">
+            <ToggleBtn label="赤道网格" on={showEqGrid} bg="rgba(34,34,68,.8)" color="#aaf"
+              onClick={() => { const v = !showEqGrid; setShowEqGrid(v); showEqGridRef.current = v; needsDraw.current = true; }} />
+            <ToggleBtn label="银道网格" on={showGalGrid} bg="rgba(200,200,220,.35)" color="#fff"
+              onClick={() => { const v = !showGalGrid; setShowGalGrid(v); showGalGridRef.current = v; needsDraw.current = true; }} />
+          </div>
+        </div>
 
-        <div className="w-px h-4 bg-white/10 mx-1" />
+        {/* Search + coordinate jump */}
+        <div className="px-3 py-2 border-b border-white/5">
+          <SidebarCoordSection
+            jumpTo={(ra, dec, f) => {
+              centerRA.current = ra; centerDec.current = dec;
+              if (f !== undefined) fov.current = f;
+              showCrosshairRef.current = true;
+              needsDraw.current = true;
+            }}
+            searchQuery={searchQuery}
+            onSearchInput={handleSearchInput}
+            onSearchSubmit={handleSearchSubmit}
+            searchResults={searchResults}
+            showDropdown={showSearchDropdown}
+            setShowDropdown={setShowSearchDropdown}
+          />
+        </div>
 
-        {/* Camera sim toggle */}
-        <button
-          onClick={() => {
-            const v = !showCamSim;
-            setShowCamSim(v);
-            showCamSimRef.current = v;
-            if (v && camEntries.length === 0) {
-              const init: CamConfig[] = [{ focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
-              setCamEntries(init);
-              camEntriesRef.current = init;
-            }
-            needsDraw.current = true;
-          }}
-          className={`px-2.5 py-0.5 rounded text-xs font-semibold transition-all select-none border ${
-            showCamSim
-              ? "bg-red-500/70 border-red-400/60 text-white shadow-[0_0_8px_rgba(255,60,60,.4)]"
-              : "bg-transparent border-amber-400/50 text-amber-300/90 hover:bg-amber-500/15"
-          }`}
-        >
-          📷 相机视场模拟
-        </button>
+        {/* Camera sim toggle + panel */}
+        <div className="px-3 py-2 border-b border-white/5">
+          <button
+            onClick={() => {
+              const v = !showCamSim;
+              setShowCamSim(v);
+              showCamSimRef.current = v;
+              if (v && camEntries.length === 0) {
+                const init: CamConfig[] = [{ focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
+                setCamEntries(init);
+                camEntriesRef.current = init;
+              }
+              needsDraw.current = true;
+            }}
+            className={`w-full px-2.5 py-1 rounded text-[13px] font-semibold transition-all select-none border ${
+              showCamSim
+                ? "bg-red-500/70 border-red-400/60 text-white shadow-[0_0_8px_rgba(255,60,60,.4)]"
+                : "bg-transparent border-amber-400/50 text-amber-300/90 hover:bg-amber-500/15"
+            }`}
+          >
+            📷 相机视场模拟
+          </button>
+          {showCamSim && (
+            <div className="mt-2 text-xs text-white/80">
+              {camEntries.map((cfg, i) => (
+                <div key={i} className="mb-2 p-1.5 rounded bg-white/5 border border-white/5">
+                  <div className="flex items-center gap-1 flex-wrap mb-1">
+                    <span className="text-white/40">f</span>
+                    <input type="number" value={cfg.focal} onChange={e => updateCamEntry(i, "focal", e.target.value)}
+                      className="w-16 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">mm</span>
+                    <input type="number" value={cfg.sw} onChange={e => updateCamEntry(i, "sw", e.target.value)}
+                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">×</span>
+                    <input type="number" value={cfg.sh} onChange={e => updateCamEntry(i, "sh", e.target.value)}
+                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">mm</span>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap mb-1">
+                    <span className="text-white/40">∠</span>
+                    <input type="number" value={cfg.angle} onChange={e => updateCamEntry(i, "angle", e.target.value)}
+                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">°</span>
+                    <button onClick={() => removeCamEntry(i)}
+                      className="ml-auto px-1 py-0.5 rounded bg-red-500/40 text-white/80 hover:bg-red-400/60 text-xs">×</button>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-white/40">Mosaic</span>
+                    <input type="number" value={cfg.mosX} onChange={e => updateCamEntry(i, "mosX", e.target.value)}
+                      className="w-10 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">×</span>
+                    <input type="number" value={cfg.mosY} onChange={e => updateCamEntry(i, "mosY", e.target.value)}
+                      className="w-10 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">重叠</span>
+                    <input type="number" value={cfg.overlap} onChange={e => updateCamEntry(i, "overlap", e.target.value)}
+                      className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
+                    <span className="text-white/40">%</span>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addCamEntry}
+                className="w-full py-1 rounded bg-indigo-500/40 text-white/80 hover:bg-indigo-400/60 text-xs">
+                + 添加视场
+              </button>
+            </div>
+          )}
+        </div>
+
       </div>
 
-      {/* Coordinate + name search row */}
-      <CoordJumpRow
-        jumpTo={(ra, dec, f) => {
-          centerRA.current = ra; centerDec.current = dec;
-          if (f !== undefined) fov.current = f;
-          showCrosshairRef.current = true;
-          needsDraw.current = true;
-        }}
-        searchQuery={searchQuery}
-        onSearchInput={handleSearchInput}
-        onSearchSubmit={handleSearchSubmit}
-        searchResults={searchResults}
-        showDropdown={showSearchDropdown}
-        setShowDropdown={setShowSearchDropdown}
-      />
-
-      <div className="relative flex-1 min-h-0" ref={containerRef}>
+      {/* ── Canvas area ── */}
+      <div className="relative flex-1 min-w-0 min-h-0" ref={containerRef}>
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full cursor-crosshair"
@@ -1314,7 +1393,7 @@ export default function SkyMapCanvas() {
           onTouchMove={onTouchMove}
         />
 
-        {/* Hover filename label — top-left, like desktop */}
+        {/* Hover filename label — top-left */}
         {hoverOverlay && (
           <div className="absolute top-2 left-2 rounded bg-black/75 px-2.5 py-1 text-sm text-blue-100 pointer-events-none">
             {parseFilename(hoverOverlay.name).target}
@@ -1330,51 +1409,6 @@ export default function SkyMapCanvas() {
             </svg>
             <span className="text-xs text-white/80">加载高清图中...</span>
             <span className="text-xs text-white/40 max-w-[200px] truncate">{parseFilename(detailLoading).target}</span>
-          </div>
-        )}
-
-        {/* Camera simulator panel */}
-        {showCamSim && (
-          <div className="absolute top-2 right-2 w-80 rounded-lg bg-black/85 backdrop-blur-sm border border-white/10 p-2.5 text-xs text-white/80 z-40 max-h-[60vh] overflow-y-auto">
-            <div className="font-semibold text-sm text-white/90 mb-1.5">📷 相机视场模拟</div>
-            {camEntries.map((cfg, i) => (
-              <div key={i} className="mb-2 p-1.5 rounded bg-white/5 border border-white/5">
-                <div className="flex items-center gap-1 flex-wrap mb-1">
-                  <span className="text-white/40">f</span>
-                  <input type="number" value={cfg.focal} onChange={e => updateCamEntry(i, "focal", e.target.value)}
-                    className="w-20 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">mm</span>
-                  <input type="number" value={cfg.sw} onChange={e => updateCamEntry(i, "sw", e.target.value)}
-                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">×</span>
-                  <input type="number" value={cfg.sh} onChange={e => updateCamEntry(i, "sh", e.target.value)}
-                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">mm</span>
-                  <span className="text-white/40">∠</span>
-                  <input type="number" value={cfg.angle} onChange={e => updateCamEntry(i, "angle", e.target.value)}
-                    className="w-16 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">°</span>
-                  <button onClick={() => removeCamEntry(i)}
-                    className="ml-auto px-1 py-0.5 rounded bg-red-500/40 text-white/80 hover:bg-red-400/60 text-xs">×</button>
-                </div>
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-white/40">Mosaic</span>
-                  <input type="number" value={cfg.mosX} onChange={e => updateCamEntry(i, "mosX", e.target.value)}
-                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">×</span>
-                  <input type="number" value={cfg.mosY} onChange={e => updateCamEntry(i, "mosY", e.target.value)}
-                    className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">重叠</span>
-                  <input type="number" value={cfg.overlap} onChange={e => updateCamEntry(i, "overlap", e.target.value)}
-                    className="w-16 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                  <span className="text-white/40">%</span>
-                </div>
-              </div>
-            ))}
-            <button onClick={addCamEntry}
-              className="w-full py-1 rounded bg-indigo-500/40 text-white/80 hover:bg-indigo-400/60 text-xs">
-              + 添加视场
-            </button>
           </div>
         )}
 
