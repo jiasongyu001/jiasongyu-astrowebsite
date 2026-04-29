@@ -297,6 +297,7 @@ export default function SkyMapCanvas() {
       const metaData: Overlay[] = await metaRes.json();
       for (const ov of metaData) {
         const img = new Image();
+        img.onload = () => { needsDraw.current = true; };
         img.src = `/skymap/previews/${encodeURIComponent(ov.name)}.webp`;
         ov.img = img;
       }
