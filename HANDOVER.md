@@ -1,7 +1,7 @@
 # CreatWebsite — 网站技术交接文档
 
-> 最后更新: 2026-04-27  
-> 技术栈: Next.js 16 + React 19 + Tailwind CSS 4 + shadcn/ui + Netlify 静态部署
+> 最后更新: 2026-04-29  
+> 技术栈: Next.js 16 + React 19 + Tailwind CSS 4 + shadcn/ui + Cloudflare Pages 静态部署
 
 ---
 
@@ -17,9 +17,10 @@
 
 **线上地址**:
 - **域名**: jsyastro.com / www.jsyastro.com
-- **Netlify**: transcendent-banoffee-7e0826.netlify.app
+- **Cloudflare Pages**: jiasongyu-astrowebsite.pages.dev
 - **GitHub**: https://github.com/jiasongyu001/jiasongyu-astrowebsite
-- **部署**: `git push origin main` → Netlify 自动构建 (1-2 分钟生效)
+- **部署**: `git push origin main` → Cloudflare Pages 自动构建 (1-2 分钟生效)
+- **域名注册**: 阿里云，Nameserver 已转至 Cloudflare (`alberto.ns.cloudflare.com` / `rosemary.ns.cloudflare.com`)
 
 ---
 
@@ -29,7 +30,6 @@
 d:\AI\windsurf_workspace\CreatWebsite\
 ├── package.json              # 依赖 (Next.js 16, React 19, shadcn, tailwind 4)
 ├── next.config.ts            # 静态导出配置 (output: "export")
-├── netlify.toml              # Netlify 构建: npm run build → publish "out"
 ├── tsconfig.json             # TS 配置 (strict, paths: @/* → ./src/*)
 ├── components.json           # shadcn 配置 (base-nova 风格, neutral 底色)
 ├── postcss.config.mjs        # PostCSS + Tailwind
@@ -98,27 +98,27 @@ d:\AI\windsurf_workspace\CreatWebsite\
 | `clsx` + `tailwind-merge` | - | className 合并 |
 | `lucide-react` | 1.7.0 | 图标库 |
 | `tw-animate-css` | 1.4.0 | CSS 动画 |
-| `@netlify/plugin-nextjs` | 5.15.9 | Netlify 部署插件 |
 
 ### 3.2 Next.js 配置 (`next.config.ts`)
 
 ```ts
-output: "export"          // 非 Vercel → 静态 HTML 导出
+output: "export"              // 始终静态 HTML 导出
 images: { unoptimized: true }  // 静态导出不支持 Image Optimization
 allowedDevOrigins: ["127.0.0.1"]
 ```
 
-**条件逻辑**: 只在非 Vercel 环境（如 Netlify）时启用 `output: "export"`。
-
-### 3.3 Netlify 配置 (`netlify.toml`)
-
-```toml
-[build]
-  command = "npm run build"
-  publish = "out"
-```
-
 构建产物: `out/` 目录（纯静态 HTML/CSS/JS）。
+
+### 3.3 Cloudflare Pages 配置
+
+通过 Cloudflare 控制台配置（无本地配置文件）:
+
+| 设置项 | 值 |
+|--------|-----|
+| 生产分支 | `main` |
+| 构建命令 | `npm run build` |
+| 构建输出目录 | `out` |
+| 环境变量 | `NODE_VERSION` = `20` |
 
 ### 3.4 TypeScript 配置
 
@@ -317,7 +317,7 @@ page.tsx (服务端, 全屏布局 + Header 徽章)
 | 功能 | 状态 |
 |------|------|
 | 立体投影全天星图 | ✅ |
-| 深空照片叠加 (preview + detail 切换) | ✅ |
+| 深空照片叠加 (preview 全量 + detail 按需加载) | ✅ |
 | 天体目录 (PN/SNR/Messier/NGC/IC/Sh2) | ✅ |
 | 两阶段搜索 (天体名 + 照片名) | ✅ |
 | 赤道坐标网格 + 银道坐标网格 | ✅ |
@@ -331,10 +331,24 @@ page.tsx (服务端, 全屏布局 + Header 徽章)
 
 4 个静态徽章，**照片数量需手动更新**:
 ```
-[立体投影(cyan)] [88星座(emerald)] [5070颗恒星(indigo)] [132张深度曝光照片(amber)]
+[立体投影(cyan)] [88星座(emerald)] [5070颗恒星(indigo)] [157张深度曝光照片(amber)]
 ```
 
-### 7.4 数据更新流程
+### 7.4 坐标与搜索栏布局 (CoordJumpRow)
+
+名称搜索、赤道坐标跳转、银道坐标跳转合并在同一行，三组之间用竖线分隔符分开。
+
+```
+[名称搜索] | [赤道坐标] RA(赤经) h m s  Dec(赤纬) ° ′ ″ [跳转] | [银道坐标] l(银经) °  b(银纬) ° [跳转]
+```
+
+### 7.5 相机视场模拟按钮
+
+独立样式的高亮按钮（非普通 ToggleBtn）:
+- **关闭状态**: 琥珀色描边 + 文字
+- **开启状态**: 红色背景 + 发光阴影 `shadow-[0_0_8px_rgba(255,60,60,.4)]`
+
+### 7.6 数据更新流程
 
 ```bash
 # 1. 在桌面版处理新图片 (自动 plate solving + WCS)
@@ -373,17 +387,24 @@ out/
 └── _next/                 # JS/CSS 资源
 ```
 
-### 8.2 Netlify 部署
+### 8.2 Cloudflare Pages 部署
 
+- **平台**: Cloudflare Pages（从 Netlify 迁移，2026-04-28）
 - **触发**: push 到 GitHub `main` 分支
 - **构建命令**: `npm run build`
 - **发布目录**: `out`
+- **环境变量**: `NODE_VERSION=20`
 - **构建时间**: ~30 秒
 - **生效时间**: 1-2 分钟
+- **免费套餐**: 无带宽限制、500次构建/月、全球 300+ CDN 节点
+
+**迁移原因**: Netlify 免费套餐带宽 100GB/月，星图页面单次访问数据量较大，容易超限。Cloudflare Pages 无带宽限制。
+
+**域名配置**: 域名在阿里云购买，Nameserver 已改为 Cloudflare（`alberto.ns.cloudflare.com` / `rosemary.ns.cloudflare.com`），通过 Cloudflare Pages Custom Domain 绑定 `jsyastro.com` 和 `www.jsyastro.com`。
 
 ### 8.3 Git 代理问题
 
-用户配置了 `http://127.0.0.1:7890` 代理，有时导致 push 失败。解决:
+用户配置了 `http://127.0.0.1:7890` 代理，有时导致 push 失败（connection reset）。解决:
 
 ```bash
 git -c http.proxy="" -c https.proxy="" push origin main
@@ -430,14 +451,48 @@ npm run dev    # → http://localhost:3000
 
 ---
 
-## 十、已知约束与注意事项
+---
+
+## 十、性能优化记录
+
+### 10.1 图片加载策略优化 (2026-04-28)
+
+**问题**: 原实现在页面打开时预加载所有 157 张 detail 高清图（343.2 MB），导致单次访问带宽消耗约 439 MB。
+
+**修复**: 
+- 删除 `preloadDetails` 预加载逻辑
+- Detail 图片改为用户点击照片时才按需下载
+- 加载时居中显示旋转 spinner + "加载高清图中..." + 目标名称
+
+### 10.2 Preview 图片压缩 (2026-04-28)
+
+**问题**: 157 张 preview 图片总计 94.6 MB。
+
+**修复**: 使用 `DeepSkySurveyMap/tools/compress_previews.py` 重新编码 WebP：
+- 大于 300KB 的文件降低质量 (70→25) + 必要时缩小分辨率
+- 压缩后: **94.6 MB → 22.1 MB**（降低 77%）
+- 视觉影响在星图缩放状态下基本不可感知
+
+### 10.3 优化前后对比
+
+| | 优化前 | 优化后 |
+|--|--------|--------|
+| Preview 图片 | 94.6 MB | 22.1 MB |
+| Detail 预加载 | 343.2 MB (自动) | 0 MB (按需) |
+| 单次访问带宽 | ~439 MB | ~23 MB |
+| 节省 | — | ~95% |
+
+---
+
+## 十一、已知约束与注意事项
 
 1. **静态导出**: 无服务端功能（API routes、middleware、ISR 均不可用）
 2. **图片未优化**: `images: { unoptimized: true }` — 不使用 Next.js Image Optimization
-3. **照片数量硬编码**: page.tsx Header 中的 "132 张" 需手动更新
+3. **照片数量硬编码**: page.tsx Header 中的 "157 张" 需手动更新
 4. **分类目前大部分为空**: 6 个分类只有 `survey` 下有 1 个项目
-5. **sky-map 数据量大**: `dso_catalog.json` ~554KB, 首次加载需下载 ~1.3MB JSON
-6. **preview/detail 图片**: 45+ WebP 文件，首次访问会逐步加载
-7. **constellations.ts**: 纯数据文件，88 星座 HIP 编号对，不需要频繁修改
-8. **shadcn 组件**: 部分组件已安装但未使用（NavigationMenu）
-9. **触屏支持**: SkyMapCanvas 支持捏合缩放，但拖动在某些移动端可能与浏览器滚动冲突
+5. **sky-map JSON 数据**: 首次加载需下载 ~1.2 MB JSON 数据
+6. **preview 图片**: 157 张 WebP 文件共约 22 MB，页面打开时全量加载
+7. **detail 图片**: 157 张共约 343 MB，用户点击时按需加载单张 (3-8 MB)
+8. **constellations.ts**: 纯数据文件，88 星座 HIP 编号对，不需要频繁修改
+9. **shadcn 组件**: 部分组件已安装但未使用（NavigationMenu）
+10. **触屏支持**: SkyMapCanvas 支持捏合缩放，但拖动在某些移动端可能与浏览器滚动冲突
