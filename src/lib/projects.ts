@@ -73,4 +73,13 @@ export const projects: Project[] = [
     tags: ["交互式", "立体投影", "WCS", "巡天"],
     date: "2026-04",
   },
+  {
+    slug: "constellation-guide",
+    category: "survey",
+    title: "星座是怎么划分的？",
+    description:
+      "交互式全天星图，可分别显示现代88星座连线、中国古代星官连线、直观亮星连线三种图层，对比不同文化与算法下的星空划分方式。支持拖动漫游和滚轮缩放。",
+    tags: ["交互式", "星座", "星官", "立体投影"],
+    date: "2026-05",
+  },
 ];

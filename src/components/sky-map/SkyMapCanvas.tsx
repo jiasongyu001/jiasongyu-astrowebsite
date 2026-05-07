@@ -10,6 +10,7 @@ interface Star {
   ra: number;  // degrees
   dec: number;
   mag: number;
+  ci: number;  // B-V color index
   hip?: number;
 }
 
@@ -62,6 +63,21 @@ const MAX_FOV = 180;
 const PN_MIN_R = 3;
 const SNR_MIN_R = 4;
 const DSO_MIN_R = 3;
+
+/* ── BV color index → RGB ── */
+function bvToRgb(bv: number): [number, number, number] {
+  let r = 1, g = 1, b = 1;
+  if (bv < 0) { r = 0.61 + 0.39 * ((bv + 0.4) / 0.4); g = 0.70 + 0.30 * ((bv + 0.4) / 0.4); }
+  else if (bv < 0.15) { r = 0.83 + 0.17 * (1 - bv / 0.15); g = 0.87 + 0.13 * (1 - bv / 0.15); }
+  else if (bv < 0.40) { const t = (bv - 0.15) / 0.25; g = 1 - 0.08 * t; b = 1 - 0.15 * t; }
+  else if (bv < 0.65) { const t = (bv - 0.40) / 0.25; g = 0.92 - 0.14 * t; b = 0.85 - 0.25 * t; }
+  else if (bv < 1.0) { const t = (bv - 0.65) / 0.35; g = 0.78 - 0.18 * t; b = 0.60 - 0.30 * t; }
+  else if (bv < 1.5) { const t = (bv - 1.0) / 0.5; r = 1 - 0.10 * t; g = 0.60 - 0.20 * t; b = 0.30 - 0.15 * t; }
+  else { const t = (bv - 1.5) / 0.5; r = 0.90 - 0.20 * t; g = 0.40 - 0.15 * t; b = 0.15 - 0.10 * t; }
+  return [Math.round(Math.max(0, Math.min(255, r * 255))),
+          Math.round(Math.max(0, Math.min(255, g * 255))),
+          Math.round(Math.max(0, Math.min(255, b * 255)))];
+}
 
 /* ── precompute star display props ── */
 function starRadius(mag: number): number {
@@ -276,7 +292,7 @@ export default function SkyMapCanvas() {
 
       const starsData: (number[])[] = await starsRes.json();
       stars.current = starsData.map((s) => ({
-        ra: s[0], dec: s[1], mag: s[2], hip: s[3],
+        ra: s[0], dec: s[1], mag: s[2], ci: s[3] ?? 0.62, hip: s[4],
       }));
 
       hipMap.current = await hipRes.json();
@@ -757,7 +773,8 @@ export default function SkyMapCanvas() {
       if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
       const r = starRadius(st.mag);
       const a = starAlpha(st.mag);
-      ctx.fillStyle = `rgba(255,255,255,${(a / 255).toFixed(2)})`;
+      const [cr, cg, cb] = bvToRgb(st.ci);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${(a / 255).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.fill();
