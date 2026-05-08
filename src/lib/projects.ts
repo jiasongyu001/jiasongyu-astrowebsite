@@ -82,4 +82,14 @@ export const projects: Project[] = [
     tags: ["交互式", "星座", "星官", "立体投影"],
     date: "2026-05",
   },
+  {
+    slug: "sun-spectrum",
+    category: "spectroscopy",
+    title: "太阳高分辨率光谱",
+    description:
+      "太阳高分辨率光谱图，展示太阳连续光谱中的精细吸收线（夫琅禾费线）。支持自由缩放与拖动查看细节。",
+    tags: ["太阳光谱", "高分辨率", "夫琅禾费线"],
+    date: "2026-05",
+    image: "/images/spectrum/SunSpectrum.png",
+  },
 ];

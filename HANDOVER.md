@@ -147,6 +147,7 @@ allowedDevOrigins: ["127.0.0.1"]
 | `/about` | `app/about/page.tsx` | 静态 | 关于我 |
 | `/projects` | `app/projects/page.tsx` | 静态 | 全部内容总览 |
 | `/projects/sky-map` | `app/projects/sky-map/page.tsx` | 静态 | ★ 星图全屏页 |
+| `/projects/sun-spectrum` | `app/projects/sun-spectrum/page.tsx` | 静态 | 太阳高分辨率光谱（全屏查看器） |
 | `/projects/[slug]` | `app/projects/[slug]/page.tsx` | SSG | 项目详情模板 |
 | `/category/[slug]` | `app/category/[slug]/page.tsx` | SSG | 分类详情页 |
 
@@ -238,7 +239,10 @@ interface Project {
 }
 ```
 
-**当前仅 1 个项目**: `sky-map` (归属 `survey` 分类)
+**当前项目**:
+- `sky-map` (归属 `survey` 分类，有专属全屏页面)
+- `constellation-guide` (归属 `survey` 分类，有专属页面)
+- `sun-spectrum` (归属 `spectroscopy` 分类，有专属全屏查看器页面)
 
 ### 5.3 添加新项目
 
@@ -489,7 +493,7 @@ npm run dev    # → http://localhost:3000
 1. **静态导出**: 无服务端功能（API routes、middleware、ISR 均不可用）
 2. **图片未优化**: `images: { unoptimized: true }` — 不使用 Next.js Image Optimization
 3. **照片数量硬编码**: page.tsx Header 中的 "157 张" 需手动更新
-4. **分类目前大部分为空**: 6 个分类只有 `survey` 下有 1 个项目
+4. **分类内容**: `survey` 下有 2 个项目，`spectroscopy` 下有 1 个项目，其余分类为空
 5. **sky-map JSON 数据**: 首次加载需下载 ~1.2 MB JSON 数据
 6. **preview 图片**: 157 张 WebP 文件共约 22 MB，页面打开时全量加载
 7. **detail 图片**: 157 张共约 343 MB，用户点击时按需加载单张 (3-8 MB)
@@ -504,3 +508,4 @@ npm run dev    # → http://localhost:3000
 1. **左侧栏布局重构**: SkyMapCanvas 从顶部横条布局改为左侧边栏（300px）+ 右侧 canvas 的水平布局。侧边栏纵向排列：鼠标坐标显示、天体目录切换、坐标网格切换、名称搜索、赤道/银道坐标跳转（RA 一行 Dec 一行）、相机视场模拟（按钮+展开面板）。Canvas 使用 ResizeObserver 实时追踪容器大小变化。
 2. **操作提示移至顶部**: "滚轮缩放·拖动漫游·单击切换分辨率" 从侧边栏底部移到 page.tsx Header 中以黄色醒目徽章显示。
 3. **图片自动重绘**: overlay 图片添加 `onload` 回调，加载完成后自动触发 canvas 重绘，无需手动拖动即可显示所有照片。
+4. **太阳高分辨率光谱页面**: 新增 `spectroscopy` 分类下第一个项目。专属全屏查看器页面 (`/projects/sun-spectrum`)，使用 `SpectrumViewer.tsx` 客户端组件实现鼠标滚轮缩放（向光标位置缩放）、拖动漫游、触屏捏合缩放。图片为高分辨率原图 (~17MB)，存放于 `public/images/spectrum/SunSpectrum.png`。
