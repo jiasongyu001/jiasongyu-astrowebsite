@@ -437,17 +437,21 @@ export default function SkyMapCanvas() {
       }
       constSegs.current = segs;
 
-      // Load overlays
-      for (const ov of metaData) {
+      // Load previews in parallel, then reveal the full layer in one draw.
+      // This avoids overlays visibly popping in one by one on a cold cache.
+      await Promise.all(metaData.map((ov) => new Promise<void>((resolve) => {
         const img = new Image();
-        img.onload = requestDraw;
+        const finish = () => resolve();
+        img.onload = finish;
         img.onerror = () => {
           ov.previewFailed = true;
-          requestDraw();
+          finish();
         };
         img.src = `/skymap/previews/${encodeURIComponent(ov.name)}.webp`;
         ov.img = img;
-      }
+      })));
+      if (cancelled) return;
+
       // Sort: larger field area first (so smaller images render on top)
       metaData.sort((a, b) => (b.field_w_deg * b.field_h_deg) - (a.field_w_deg * a.field_h_deg));
       overlays.current = metaData;
