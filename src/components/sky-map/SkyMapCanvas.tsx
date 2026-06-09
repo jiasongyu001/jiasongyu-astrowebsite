@@ -27,6 +27,8 @@ interface Overlay {
   img?: HTMLImageElement;       // preview (20"/px)
   detailImg?: HTMLImageElement; // detail (5"/px), loaded on demand
   showDetail?: boolean;         // true = currently showing detail
+  previewFailed?: boolean;
+  detailFailed?: boolean;
 }
 
 interface ConstellationSeg {
@@ -88,6 +90,58 @@ function starAlpha(mag: number): number {
   return Math.min(255, Math.max(80, Math.round(80 + 175 * (1 - mag / MAG_LIMIT))));
 }
 
+function formatDecimalDeg(value: number): string {
+  return value.toFixed(5);
+}
+
+function formatRaHms(raDeg: number): string {
+  const secondsPerDay = 24 * 3600;
+  let totalSeconds = Math.round(((((raDeg / 15) % 24) + 24) % 24) * 3600) % secondsPerDay;
+  const h = Math.floor(totalSeconds / 3600);
+  totalSeconds -= h * 3600;
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds - m * 60;
+  return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
+}
+
+function formatDms(value: number): string {
+  const sign = value < 0 ? "-" : "+";
+  let totalSeconds = Math.round(Math.abs(value) * 3600);
+  const deg = Math.floor(totalSeconds / 3600);
+  totalSeconds -= deg * 3600;
+  const min = Math.floor(totalSeconds / 60);
+  const sec = totalSeconds - min * 60;
+  return `${sign}${String(deg).padStart(2, "0")}° ${String(min).padStart(2, "0")}' ${String(sec).padStart(2, "0")}"`;
+}
+
+type CoordText = {
+  ra: string;
+  dec: string;
+  l: string;
+  b: string;
+};
+
+const EMPTY_COORD_TEXT: CoordText = {
+  ra: "RA: --",
+  dec: "Dec: --",
+  l: "l: --",
+  b: "b: --",
+};
+
+function formatCoordinateText(raDeg: number, decDeg: number): CoordText {
+  const [gl, gb] = eqToGal(raDeg, decDeg);
+  return {
+    ra: `RA: ${formatRaHms(raDeg)}`,
+    dec: `Dec: ${formatDms(decDeg)}`,
+    l: `l: ${formatDecimalDeg(gl)}°`,
+    b: `b: ${formatDecimalDeg(gb)}°`,
+  };
+}
+
+function clampDec(value: number): number {
+  return Math.max(-90, Math.min(90, value));
+}
+
 /* ── toggle button ── */
 function ToggleBtn({ label, on, bg, color, onClick }: {
   label: string; on: boolean; bg: string; color: string; onClick: () => void;
@@ -118,7 +172,8 @@ function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmi
 }) {
   const [raH, setRaH] = useState(""); const [raM, setRaM] = useState(""); const [raS, setRaS] = useState("");
   const [decD, setDecD] = useState(""); const [decM, setDecM] = useState(""); const [decS, setDecS] = useState("");
-  const [gl, setGl] = useState(""); const [gb, setGb] = useState("");
+  const [glInput, setGlInput] = useState("");
+  const [gbInput, setGbInput] = useState("");
 
   const doRaDec = () => {
     const h = parseFloat(raH || "0"), m = parseFloat(raM || "0"), s = parseFloat(raS || "0");
@@ -126,16 +181,18 @@ function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmi
     const ra = (h + m / 60 + s / 3600) * 15;
     const sign = dd < 0 ? -1 : 1;
     const dec = sign * (Math.abs(dd) + dm / 60 + ds / 3600);
-    jumpTo(((ra % 360) + 360) % 360, Math.max(-90, Math.min(90, dec)));
+    jumpTo(((ra % 360) + 360) % 360, clampDec(dec));
   };
 
   const doGal = () => {
-    const l = parseFloat(gl || "0"), b = parseFloat(gb || "0");
-    const [ra, dec] = galToEq(((l % 360) + 360) % 360, Math.max(-90, Math.min(90, b)));
+    const l = parseFloat(glInput || "0");
+    const b = parseFloat(gbInput || "0");
+    const [ra, dec] = galToEq(((l % 360) + 360) % 360, clampDec(b));
     jumpTo(ra, dec);
   };
 
-  const inp = "w-[4rem] px-1.5 py-1 rounded text-[13px] bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
+  const inp = "w-full px-2 py-1 rounded text-[13px] bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
+  const smallInp = "w-[4rem] px-1.5 py-1 rounded text-[13px] bg-white/5 border border-white/10 text-white/80 outline-none focus:border-indigo-400/50 text-center";
   return (
     <>
       {/* ── Name search ── */}
@@ -173,15 +230,15 @@ function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmi
         <div className="text-white/40 text-[13px] mb-1">赤道坐标</div>
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-white/50 text-[13px] w-14 shrink-0">RA 赤经</span>
-          <input className={inp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-          <input className={inp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-          <input className={inp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={raH} onChange={e=>setRaH(e.target.value)} placeholder="h" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={raM} onChange={e=>setRaM(e.target.value)} placeholder="m" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={raS} onChange={e=>setRaS(e.target.value)} placeholder="s" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
         </div>
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-white/50 text-[13px] w-14 shrink-0">Dec 赤纬</span>
-          <input className={inp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-          <input className={inp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
-          <input className={inp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={decD} onChange={e=>setDecD(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={decM} onChange={e=>setDecM(e.target.value)} placeholder="′" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
+          <input className={smallInp} value={decS} onChange={e=>setDecS(e.target.value)} placeholder="″" onKeyDown={e=>{if(e.key==="Enter")doRaDec();}} />
         </div>
         <button onClick={doRaDec} className="w-full py-1 rounded text-[13px] bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
       </div>
@@ -193,11 +250,11 @@ function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmi
         <div className="text-white/40 text-[13px] mb-1">银道坐标</div>
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-white/50 text-[13px] w-14 shrink-0">l 银经</span>
-          <input className={`${inp} flex-1`} value={gl} onChange={e=>setGl(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+          <input className={inp} value={glInput} onChange={e=>setGlInput(e.target.value)} placeholder="0.00000°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
         </div>
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-white/50 text-[13px] w-14 shrink-0">b 银纬</span>
-          <input className={`${inp} flex-1`} value={gb} onChange={e=>setGb(e.target.value)} placeholder="°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
+          <input className={inp} value={gbInput} onChange={e=>setGbInput(e.target.value)} placeholder="0.00000°" onKeyDown={e=>{if(e.key==="Enter")doGal();}} />
         </div>
         <button onClick={doGal} className="w-full py-1 rounded text-[13px] bg-indigo-500/60 text-white/90 hover:bg-indigo-400/70">跳转</button>
       </div>
@@ -221,17 +278,80 @@ export default function SkyMapCanvas() {
 
   const dragLast = useRef<{ x: number; y: number } | null>(null);
   const pressPos = useRef<{ x: number; y: number } | null>(null);
+  const isDraggingView = useRef(false);
   const animId = useRef(0);
   const needsDraw = useRef(true);
+  const pointerUiFrame = useRef<number | null>(null);
+  const centerCoordFrame = useRef<number | null>(null);
+  const pendingPointerUi = useRef<{ coord: CoordText; hover: Overlay | null } | null>(null);
+  const lastCoordText = useRef<CoordText>(EMPTY_COORD_TEXT);
+  const lastCenterCoordText = useRef(formatCoordinateText(0, 30));
+  const lastHoverOverlay = useRef<Overlay | null>(null);
 
   const pnData = useRef<PNRow[]>([]);
   const snrData = useRef<SNRRow[]>([]);
   const dsoData = useRef<DSORow[]>([]);
 
-  const [coordText, setCoordText] = useState("RA: --  Dec: --");
+  const [coordText, setCoordText] = useState<CoordText>(EMPTY_COORD_TEXT);
+  const [centerCoordText, setCenterCoordText] = useState(() => formatCoordinateText(0, 30));
   const [hoverOverlay, setHoverOverlay] = useState<Overlay | null>(null);
   const [selectedOverlay, setSelectedOverlay] = useState<Overlay | null>(null);
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const requestDraw = useCallback(() => {
+    needsDraw.current = true;
+  }, []);
+
+  const flushCenterCoord = useCallback(() => {
+    centerCoordFrame.current = null;
+    const next = formatCoordinateText(centerRA.current, centerDec.current);
+    if (
+      next.ra === lastCenterCoordText.current.ra &&
+      next.dec === lastCenterCoordText.current.dec &&
+      next.l === lastCenterCoordText.current.l &&
+      next.b === lastCenterCoordText.current.b
+    ) return;
+    lastCenterCoordText.current = next;
+    setCenterCoordText(next);
+  }, []);
+
+  const updateCenterCoord = useCallback((immediate = false) => {
+    if (immediate) {
+      if (centerCoordFrame.current !== null) {
+        cancelAnimationFrame(centerCoordFrame.current);
+        centerCoordFrame.current = null;
+      }
+      flushCenterCoord();
+      return;
+    }
+    if (centerCoordFrame.current !== null) return;
+    centerCoordFrame.current = requestAnimationFrame(flushCenterCoord);
+  }, [flushCenterCoord]);
+
+  const queuePointerUi = useCallback((coord: CoordText, hover: Overlay | null) => {
+    pendingPointerUi.current = { coord, hover };
+    if (pointerUiFrame.current !== null) return;
+    pointerUiFrame.current = window.requestAnimationFrame(() => {
+      pointerUiFrame.current = null;
+      const next = pendingPointerUi.current;
+      pendingPointerUi.current = null;
+      if (!next) return;
+      if (
+        next.coord.ra !== lastCoordText.current.ra ||
+        next.coord.dec !== lastCoordText.current.dec ||
+        next.coord.l !== lastCoordText.current.l ||
+        next.coord.b !== lastCoordText.current.b
+      ) {
+        lastCoordText.current = next.coord;
+        setCoordText(next.coord);
+      }
+      if (next.hover !== lastHoverOverlay.current) {
+        lastHoverOverlay.current = next.hover;
+        setHoverOverlay(next.hover);
+      }
+    });
+  }, []);
 
   /* ── search ── */
   type SearchEntry = { norm: string; label: string; ra: number; dec: number; fov: number };
@@ -262,8 +382,9 @@ export default function SkyMapCanvas() {
   const showEqGridRef = useRef(true);
   const showGalGridRef = useRef(false);
 
-  /* ── crosshair ── */
-  const showCrosshairRef = useRef(false);
+  /* ── center crosshair ── */
+  const [showCenterCrosshair, setShowCenterCrosshair] = useState(false);
+  const showCenterCrosshairRef = useRef(false);
 
   /* ── camera simulator ── */
   type CamConfig = { focal: number; sw: number; sh: number; angle: number; mosX: number; mosY: number; overlap: number };
@@ -276,26 +397,33 @@ export default function SkyMapCanvas() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [starsRes, hipRes, metaRes, pnRes, snrRes, dsoRes] = await Promise.all([
-        fetch("/skymap/stars.json"),
-        fetch("/skymap/hip_map.json"),
-        fetch("/skymap/metadata.json"),
-        fetch("/skymap/pn_catalog.json"),
-        fetch("/skymap/snr_catalog.json"),
-        fetch("/skymap/dso_catalog.json"),
+      try {
+      const fetchJson = async <T,>(url: string): Promise<T> => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+        return res.json() as Promise<T>;
+      };
+
+      const [starsData, hipData, metaData, pnRows, snrRows, dsoRows] = await Promise.all([
+        fetchJson<(number[])[]>("/skymap/stars.json"),
+        fetchJson<Record<string, [number, number]>>("/skymap/hip_map.json"),
+        fetchJson<Overlay[]>("/skymap/metadata.json"),
+        fetchJson<PNRow[]>("/skymap/pn_catalog.json"),
+        fetchJson<SNRRow[]>("/skymap/snr_catalog.json"),
+        fetchJson<DSORow[]>("/skymap/dso_catalog.json"),
       ]);
       if (cancelled) return;
 
-      pnData.current = await pnRes.json();
-      snrData.current = await snrRes.json();
-      dsoData.current = await dsoRes.json();
+      setLoadError(null);
+      pnData.current = pnRows;
+      snrData.current = snrRows;
+      dsoData.current = dsoRows;
 
-      const starsData: (number[])[] = await starsRes.json();
       stars.current = starsData.map((s) => ({
         ra: s[0], dec: s[1], mag: s[2], ci: s[3] ?? 0.62, hip: s[4],
       }));
 
-      hipMap.current = await hipRes.json();
+      hipMap.current = hipData;
 
       // Build constellation segments
       const segs: ConstellationSeg[] = [];
@@ -310,24 +438,32 @@ export default function SkyMapCanvas() {
       constSegs.current = segs;
 
       // Load overlays
-      const metaData: Overlay[] = await metaRes.json();
       for (const ov of metaData) {
         const img = new Image();
-        img.onload = () => { needsDraw.current = true; };
+        img.onload = requestDraw;
+        img.onerror = () => {
+          ov.previewFailed = true;
+          requestDraw();
+        };
         img.src = `/skymap/previews/${encodeURIComponent(ov.name)}.webp`;
         ov.img = img;
       }
       // Sort: larger field area first (so smaller images render on top)
       metaData.sort((a, b) => (b.field_w_deg * b.field_h_deg) - (a.field_w_deg * a.field_h_deg));
       overlays.current = metaData;
-      needsDraw.current = true;
+      requestDraw();
 
       // Detail images are loaded on-demand when user clicks an overlay
       // Build search index
       buildSearchIndex(metaData, dsoData.current);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Failed to load sky-map data");
+        }
+      }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [requestDraw]);
 
   /* ── search index ── */
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
@@ -438,11 +574,12 @@ export default function SkyMapCanvas() {
     setShowSearchDropdown(res.length > 0);
   }
 
-  function jumpTo(ra: number, dec: number, fovVal: number) {
+  function jumpTo(ra: number, dec: number, fovVal?: number) {
     centerRA.current = ra;
     centerDec.current = dec;
-    fov.current = Math.min(fovVal, MAX_FOV);
-    needsDraw.current = true;
+    if (fovVal !== undefined) fov.current = Math.min(fovVal, MAX_FOV);
+    updateCenterCoord(true);
+    requestDraw();
     setShowSearchDropdown(false);
   }
 
@@ -458,13 +595,13 @@ export default function SkyMapCanvas() {
     const next = [...camEntries, { focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
     setCamEntries(next);
     camEntriesRef.current = next;
-    needsDraw.current = true;
+    requestDraw();
   }
   function removeCamEntry(idx: number) {
     const next = camEntries.filter((_, i) => i !== idx);
     setCamEntries(next);
     camEntriesRef.current = next;
-    needsDraw.current = true;
+    requestDraw();
   }
   function updateCamEntry(idx: number, field: keyof CamConfig, value: string) {
     const next = camEntries.map((c, i) => {
@@ -476,7 +613,7 @@ export default function SkyMapCanvas() {
     });
     setCamEntries(next);
     camEntriesRef.current = next;
-    needsDraw.current = true;
+    requestDraw();
   }
 
   /* ── draw ── */
@@ -493,6 +630,7 @@ export default function SkyMapCanvas() {
 
     const c = makeCenter(centerRA.current, centerDec.current);
     const sc = computeScale(W, fov.current);
+    const lightweight = isDraggingView.current;
 
     // Background
     ctx.fillStyle = "#08080f";
@@ -503,13 +641,15 @@ export default function SkyMapCanvas() {
     drawConstellations(ctx, sc, c, cx, cy, W, H);
     drawStars(ctx, sc, c, cx, cy, W, H);
     drawOverlays(ctx, sc, c, cx, cy, W, H);
-    drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
-    drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
-    drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
-    drawCamFov(ctx, sc, cx, cy);
+    if (!lightweight) {
+      drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
+      drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
+      drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
+      drawCamFov(ctx, sc, cx, cy);
+    }
 
     // Crosshair
-    if (showCrosshairRef.current) {
+    if (showCenterCrosshairRef.current) {
       const chSize = 12 * dpr;
       const gap = 3 * dpr;
       ctx.strokeStyle = "rgba(255,80,80,0.8)";
@@ -1087,16 +1227,16 @@ export default function SkyMapCanvas() {
     canvas.height = rect.height * dpr;
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
-    needsDraw.current = true;
-  }, []);
+    requestDraw();
+  }, [requestDraw]);
 
   /* ── wheel handler (native, non-passive) ── */
   const wheelHandler = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 0.8 : 1.25;
     fov.current = Math.max(MIN_FOV, Math.min(MAX_FOV, fov.current * factor));
-    needsDraw.current = true;
-  }, []);
+    requestDraw();
+  }, [requestDraw]);
 
   /* ── animation loop ── */
   useEffect(() => {
@@ -1128,6 +1268,8 @@ export default function SkyMapCanvas() {
       ro?.disconnect();
       canvas?.removeEventListener("wheel", wheelHandler);
       cancelAnimationFrame(animId.current);
+      if (pointerUiFrame.current !== null) cancelAnimationFrame(pointerUiFrame.current);
+      if (centerCoordFrame.current !== null) cancelAnimationFrame(centerCoordFrame.current);
     };
   }, [draw, handleResize, wheelHandler]);
 
@@ -1144,6 +1286,7 @@ export default function SkyMapCanvas() {
     const pos = getCanvasPos(e.clientX, e.clientY);
     pressPos.current = pos;
     dragLast.current = pos;
+    isDraggingView.current = false;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
@@ -1151,8 +1294,10 @@ export default function SkyMapCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const pos = getCanvasPos(e.clientX, e.clientY);
+    const isDragging = Boolean(dragLast.current && e.buttons > 0);
 
-    if (dragLast.current && e.buttons > 0) {
+    if (isDragging && dragLast.current) {
+      isDraggingView.current = true;
       const dx = pos.x - dragLast.current.x;
       const dy = pos.y - dragLast.current.y;
       const fovPerPx = fov.current / canvas.width;
@@ -1160,8 +1305,13 @@ export default function SkyMapCanvas() {
       centerRA.current = ((centerRA.current + dx * fovPerPx / Math.max(cosDec, 0.05)) % 360 + 360) % 360;
       centerDec.current = Math.max(-90, Math.min(90, centerDec.current + dy * fovPerPx));
       dragLast.current = pos;
-      showCrosshairRef.current = false;
-      needsDraw.current = true;
+      updateCenterCoord();
+      requestDraw();
+      if (lastHoverOverlay.current !== null) {
+        lastHoverOverlay.current = null;
+        setHoverOverlay(null);
+      }
+      return;
     }
 
     // Update coordinate display
@@ -1172,24 +1322,17 @@ export default function SkyMapCanvas() {
     const projX = (W / 2 - pos.x) / sc;
     const projY = (H / 2 - pos.y) / sc;
     const [raDeg, decDeg] = stereoInv(projX, projY, c);
-    const raH = raDeg / 15;
-    const h = Math.floor(raH);
-    const m = Math.floor((raH - h) * 60);
-    const s = ((raH - h - m / 60) * 3600).toFixed(1);
-    const sign = decDeg >= 0 ? "+" : "-";
-    const dAbs = Math.abs(decDeg);
-    const dd = Math.floor(dAbs);
-    const dm = Math.floor((dAbs - dd) * 60);
-    const [gl, gb] = eqToGal(raDeg, decDeg);
-    setCoordText(`RA: ${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m ${s}s   Dec: ${sign}${String(dd).padStart(2, "0")}° ${String(dm).padStart(2, "0")}'   l: ${gl.toFixed(2)}°  b: ${gb.toFixed(2)}°`);
+    const nextCoordText = formatCoordinateText(raDeg, decDeg);
 
     // Hover detection
-    const hit = hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2);
-    setHoverOverlay(hit);
+    const hit = isDragging ? null : hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2);
+    queuePointerUi(nextCoordText, hit);
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const pos = getCanvasPos(e.clientX, e.clientY);
+    const wasDragging = isDraggingView.current;
+    isDraggingView.current = false;
     if (pressPos.current) {
       const dist = Math.abs(pos.x - pressPos.current.x) + Math.abs(pos.y - pressPos.current.y);
       if (dist < 5) {
@@ -1219,17 +1362,31 @@ export default function SkyMapCanvas() {
                 setDetailLoading(hit.name);
                 if (!hit.detailImg) {
                   const img = new Image();
-                  img.src = `/skymap/details/${encodeURIComponent(hit.name)}.webp`;
                   img.onload = () => {
                     setDetailLoading(null);
-                    needsDraw.current = true;
+                    requestDraw();
                   };
+                  img.onerror = () => {
+                    hit.detailFailed = true;
+                    hit.showDetail = false;
+                    setSelectedOverlay(null);
+                    setDetailLoading(null);
+                    requestDraw();
+                  };
+                  img.src = `/skymap/details/${encodeURIComponent(hit.name)}.webp`;
                   hit.detailImg = img;
                 } else {
                   // Already started loading, attach handler
                   hit.detailImg.onload = () => {
                     setDetailLoading(null);
-                    needsDraw.current = true;
+                    requestDraw();
+                  };
+                  hit.detailImg.onerror = () => {
+                    hit.detailFailed = true;
+                    hit.showDetail = false;
+                    setSelectedOverlay(null);
+                    setDetailLoading(null);
+                    requestDraw();
                   };
                 }
               }
@@ -1240,12 +1397,16 @@ export default function SkyMapCanvas() {
             setSelectedOverlay(null);
             setDetailLoading(null);
           }
-          needsDraw.current = true;
+          requestDraw();
         }
       }
     }
     pressPos.current = null;
     dragLast.current = null;
+    if (wasDragging) {
+      updateCenterCoord(true);
+      requestDraw();
+    }
   };
 
   /* ── touch pinch zoom ── */
@@ -1265,7 +1426,7 @@ export default function SkyMapCanvas() {
       if (lastPinchDist.current > 0) {
         const ratio = lastPinchDist.current / dist;
         fov.current = Math.max(MIN_FOV, Math.min(MAX_FOV, fov.current * ratio));
-        needsDraw.current = true;
+        requestDraw();
       }
       lastPinchDist.current = dist;
     }
@@ -1274,10 +1435,51 @@ export default function SkyMapCanvas() {
   return (
     <div className="flex flex-row h-full w-full">
       {/* ── Left sidebar ── */}
-      <div className="w-[300px] shrink-0 bg-[#111118] border-r border-white/5 flex flex-col overflow-y-auto text-[13px] text-white/50">
+      <div className="w-[380px] shrink-0 bg-[#111118] border-r border-white/5 flex flex-col overflow-y-auto text-[13px] text-white/50">
         {/* Coord display */}
-        <div className="px-3 py-2 border-b border-white/5 font-mono text-[13px] leading-relaxed text-white/50">
-          {coordText}
+        <div className="px-3 py-2 border-b border-white/5 font-mono text-[12px] leading-relaxed text-white/50">
+          <div>
+            <div className="font-sans text-[11px] leading-4 text-white/35">鼠标位置</div>
+            <div className="mt-0.5 whitespace-nowrap">
+              <span className="font-sans text-white/40">赤道</span>
+              <span className="ml-2">{coordText.ra}</span>
+              <span className="ml-3">{coordText.dec}</span>
+            </div>
+            <div className="whitespace-nowrap">
+              <span className="font-sans text-white/40">银道</span>
+              <span className="ml-2">{coordText.l}</span>
+              <span className="ml-3">{coordText.b}</span>
+            </div>
+          </div>
+          <div className="mt-2 border-t border-white/5 pt-2">
+            <div className="flex items-center justify-between gap-2 font-sans text-[11px] leading-4 text-white/35">
+              <span>屏幕中心（当前视野中央坐标）</span>
+              <label className="flex items-center gap-1 text-white/50 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showCenterCrosshair}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setShowCenterCrosshair(next);
+                    showCenterCrosshairRef.current = next;
+                    requestDraw();
+                  }}
+                  className="h-3 w-3 accent-red-400"
+                />
+                十字线
+              </label>
+            </div>
+            <div className="mt-0.5 whitespace-nowrap">
+              <span className="font-sans text-white/40">赤道</span>
+              <span className="ml-2">{centerCoordText.ra}</span>
+              <span className="ml-3">{centerCoordText.dec}</span>
+            </div>
+            <div className="whitespace-nowrap">
+              <span className="font-sans text-white/40">银道</span>
+              <span className="ml-2">{centerCoordText.l}</span>
+              <span className="ml-3">{centerCoordText.b}</span>
+            </div>
+          </div>
         </div>
 
         {/* Catalog toggles */}
@@ -1285,17 +1487,17 @@ export default function SkyMapCanvas() {
           <div className="text-white/40 text-[13px] mb-1">天体目录</div>
           <div className="flex flex-wrap gap-1">
             <ToggleBtn label="PN" on={showPN} bg="linear-gradient(90deg,rgba(255,60,60,.7),rgba(255,160,40,.7),rgba(0,200,100,.7))" color="#fff"
-              onClick={() => { const v = !showPN; setShowPN(v); showPNRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showPN; setShowPN(v); showPNRef.current = v; requestDraw(); }} />
             <ToggleBtn label="SNR" on={showSNR} bg="rgba(60,160,255,.7)" color="#fff"
-              onClick={() => { const v = !showSNR; setShowSNR(v); showSNRRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showSNR; setShowSNR(v); showSNRRef.current = v; requestDraw(); }} />
             <ToggleBtn label="Messier" on={showMessier} bg="rgba(220,220,220,.7)" color="#111"
-              onClick={() => { const v = !showMessier; setShowMessier(v); showMessierRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showMessier; setShowMessier(v); showMessierRef.current = v; requestDraw(); }} />
             <ToggleBtn label="NGC" on={showNGC} bg="rgba(220,220,220,.7)" color="#111"
-              onClick={() => { const v = !showNGC; setShowNGC(v); showNGCRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showNGC; setShowNGC(v); showNGCRef.current = v; requestDraw(); }} />
             <ToggleBtn label="IC" on={showIC} bg="rgba(220,220,220,.7)" color="#111"
-              onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showIC; setShowIC(v); showICRef.current = v; requestDraw(); }} />
             <ToggleBtn label="Sh2" on={showSh2} bg="rgba(220,220,220,.7)" color="#111"
-              onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showSh2; setShowSh2(v); showSh2Ref.current = v; requestDraw(); }} />
           </div>
         </div>
 
@@ -1304,9 +1506,9 @@ export default function SkyMapCanvas() {
           <div className="text-white/40 text-[13px] mb-1">坐标网格</div>
           <div className="flex flex-wrap gap-1">
             <ToggleBtn label="赤道网格" on={showEqGrid} bg="rgba(34,34,68,.8)" color="#aaf"
-              onClick={() => { const v = !showEqGrid; setShowEqGrid(v); showEqGridRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showEqGrid; setShowEqGrid(v); showEqGridRef.current = v; requestDraw(); }} />
             <ToggleBtn label="银道网格" on={showGalGrid} bg="rgba(200,200,220,.35)" color="#fff"
-              onClick={() => { const v = !showGalGrid; setShowGalGrid(v); showGalGridRef.current = v; needsDraw.current = true; }} />
+              onClick={() => { const v = !showGalGrid; setShowGalGrid(v); showGalGridRef.current = v; requestDraw(); }} />
           </div>
         </div>
 
@@ -1316,8 +1518,8 @@ export default function SkyMapCanvas() {
             jumpTo={(ra, dec, f) => {
               centerRA.current = ra; centerDec.current = dec;
               if (f !== undefined) fov.current = f;
-              showCrosshairRef.current = true;
-              needsDraw.current = true;
+              updateCenterCoord(true);
+              requestDraw();
             }}
             searchQuery={searchQuery}
             onSearchInput={handleSearchInput}
@@ -1340,7 +1542,7 @@ export default function SkyMapCanvas() {
                 setCamEntries(init);
                 camEntriesRef.current = init;
               }
-              needsDraw.current = true;
+              requestDraw();
             }}
             className={`w-full px-2.5 py-1 rounded text-[13px] font-semibold transition-all select-none border ${
               showCamSim
@@ -1410,6 +1612,15 @@ export default function SkyMapCanvas() {
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
         />
+
+        {loadError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 px-4">
+            <div className="max-w-md rounded-lg border border-red-400/30 bg-red-950/80 p-4 text-sm text-red-100 shadow-xl">
+              <div className="mb-1 font-semibold">星图数据加载失败</div>
+              <div className="font-mono text-xs text-red-100/80">{loadError}</div>
+            </div>
+          </div>
+        )}
 
         {/* Hover filename label — top-left */}
         {hoverOverlay && (

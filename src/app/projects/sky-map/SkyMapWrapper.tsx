@@ -26,7 +26,6 @@ export default function SkyMapWrapper() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    console.log("[SkyMapWrapper] mounted");
     setMounted(true);
   }, []);
 
@@ -38,7 +37,6 @@ export default function SkyMapWrapper() {
     );
   }
 
-  console.log("[SkyMapWrapper] rendering SkyMapCanvas");
   return (
     <ErrorBoundary>
       <div className="flex-1 min-h-0 flex flex-col">
