@@ -52,6 +52,18 @@ git -c http.proxy="" -c https.proxy="" push origin main
 
 ---
 
+## 独立 Aladin 星图
+
+- 新页面：`/projects/sky-map-aladin`
+- 旧页面 `/projects/sky-map` 和旧 `/skymap` 资源必须保持独立、不覆盖。
+- 新页面组件位于 `src/components/sky-map-aladin/`。
+- 开发环境资源源：`http://127.0.0.1:3011`
+- 生产资源源：`https://dssm-aladin-assets.jsyastro.com`
+- 发布源数据和发布清单由兄弟目录 `DSSM-Aladin` 管理。
+- OIII 和 H-alpha 正式发布最高为 `Norder5`；深空照片详情图保持高分辨率。
+
+---
+
 ## 关联项目
 
 桌面版星图程序在同级目录：

@@ -65,6 +65,15 @@ export const categories: Category[] = [
 
 export const projects: Project[] = [
   {
+    slug: "sky-map-aladin",
+    category: "survey",
+    title: "全天深度曝光参考——Aladin",
+    description:
+      "独立部署的全天深度曝光参考图，整合高分辨率深空照片与 NSNS OIII、H-alpha HiPS 图层，支持图层调节、坐标检索、视场模拟与交互浏览。",
+    tags: ["交互式", "Aladin", "HiPS", "WCS"],
+    date: "2026-06",
+  },
+  {
     slug: "sky-map",
     category: "survey",
     title: "全天深度曝光参考图",
