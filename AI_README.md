@@ -70,6 +70,7 @@ git -c http.proxy="" -c https.proxy="" push origin main
 - 用户云文档保存 Aladin 星图的命名视场、兴趣目标与最后浏览状态。
 - `ADMIN_EMAIL` 通过 Cloudflare Pages Secret 设置；管理员只能查看用户数量与有效会话数量。
 - 本地全栈测试应先构建，再运行 `wrangler pages dev out`，不要只用 `next dev` 测试登录 API。
+- Git 自动构建当前只发布静态文件，不能作为含 Functions 版本的最终部署。推送代码后必须执行 `npm run deploy:production`，并确认 `/api/auth/me` 返回 200。
 
 ---
 
