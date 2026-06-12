@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { AccountMenu } from "@/components/account-menu";
 
 const NAV_ITEMS = [
   { label: "首页", href: "/" },
@@ -36,6 +37,7 @@ export function Navbar() {
               {item.label}
             </Link>
           ))}
+          <AccountMenu />
         </nav>
       </div>
     </header>

@@ -4,6 +4,8 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import { stereoFwd, stereoInv, makeCenter, computeScale, eqToGal, galToEq } from "./projection";
 import { CONSTELLATION_LINES } from "./constellations";
 import type { ProjCenter } from "./projection";
+import { useUserData } from "@/components/user-data-provider";
+import type { CameraConfig, FavoriteTarget, SkyMapState } from "@/lib/user-data";
 
 /* ── types ── */
 interface Star {
@@ -361,6 +363,18 @@ function SidebarCoordSection({ jumpTo, searchQuery, onSearchInput, onSearchSubmi
 }
 
 export default function SkyMapCanvas() {
+  const {
+    user,
+    document: userDocument,
+    documentLoaded,
+    syncStatus,
+    saveCameraField,
+    deleteCameraField,
+    saveFavoriteTarget,
+    deleteFavoriteTarget,
+    setMapState,
+    importFavoriteTargets,
+  } = useUserData();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const layerCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -410,6 +424,7 @@ export default function SkyMapCanvas() {
 
   const [coordText, setCoordText] = useState<CoordText>(EMPTY_COORD_TEXT);
   const [centerCoordText, setCenterCoordText] = useState(() => formatCoordinateText(0, 30));
+  const [viewRevision, setViewRevision] = useState(0);
   const [hoverOverlay, setHoverOverlay] = useState<Overlay | null>(null);
   const [selectedOverlay, setSelectedOverlay] = useState<Overlay | null>(null);
   const [detailLoading, setDetailLoading] = useState<string | null>(null);
@@ -531,11 +546,84 @@ export default function SkyMapCanvas() {
   const showCenterCrosshairRef = useRef(false);
 
   /* ── camera simulator ── */
-  type CamConfig = { focal: number; sw: number; sh: number; angle: number; mosX: number; mosY: number; overlap: number };
+  type CamConfig = CameraConfig;
   const [showCamSim, setShowCamSim] = useState(false);
   const [camEntries, setCamEntries] = useState<CamConfig[]>([]);
   const camEntriesRef = useRef<CamConfig[]>([]);
   const showCamSimRef = useRef(false);
+  const [cameraFieldName, setCameraFieldName] = useState("");
+  const [favoriteName, setFavoriteName] = useState("");
+  const favoriteImportRef = useRef<HTMLInputElement>(null);
+  const restoredUserRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user || !documentLoaded || restoredUserRef.current === user.id) return;
+    restoredUserRef.current = user.id;
+    const state = userDocument.mapState;
+    if (!state) return;
+    centerRA.current = state.centerRA;
+    centerDec.current = state.centerDec;
+    fov.current = state.fov;
+    setShowDeepSkyPhotos(state.showDeepSkyPhotos);
+    showDeepSkyPhotosRef.current = state.showDeepSkyPhotos;
+    setShowNSNS(state.showNSNS);
+    showNSNSRef.current = state.showNSNS;
+    setNSNSOpacity(state.nsnsOpacity);
+    nsnsOpacityRef.current = state.nsnsOpacity / 100;
+    setNSNSBrightness(state.nsnsBrightness);
+    nsnsBrightnessRef.current = state.nsnsBrightness;
+    setNSNSColorized(state.nsnsColorized);
+    nsnsColorizedRef.current = state.nsnsColorized;
+    setShowNSNSHalpha(state.showNSNSHalpha);
+    showNSNSHalphaRef.current = state.showNSNSHalpha;
+    setNSNSHalphaOpacity(state.nsnsHalphaOpacity);
+    nsnsHalphaOpacityRef.current = state.nsnsHalphaOpacity / 100;
+    setNSNSHalphaBrightness(state.nsnsHalphaBrightness);
+    nsnsHalphaBrightnessRef.current = state.nsnsHalphaBrightness;
+    setNSNSHalphaColorized(state.nsnsHalphaColorized);
+    nsnsHalphaColorizedRef.current = state.nsnsHalphaColorized;
+    setShowEqGrid(state.showEqGrid);
+    showEqGridRef.current = state.showEqGrid;
+    setShowGalGrid(state.showGalGrid);
+    showGalGridRef.current = state.showGalGrid;
+    setShowCenterCrosshair(state.showCenterCrosshair);
+    showCenterCrosshairRef.current = state.showCenterCrosshair;
+    setShowCamSim(state.showCamSim);
+    showCamSimRef.current = state.showCamSim;
+    updateCenterCoord(true);
+    invalidatePhotoLayer();
+    requestDraw();
+  }, [documentLoaded, user?.id]);
+
+  useEffect(() => {
+    if (!user || !documentLoaded || restoredUserRef.current !== user.id) return;
+    const timer = setTimeout(() => {
+      const state: SkyMapState = {
+        centerRA: centerRA.current,
+        centerDec: centerDec.current,
+        fov: fov.current,
+        showDeepSkyPhotos,
+        showNSNS,
+        nsnsOpacity,
+        nsnsBrightness,
+        nsnsColorized,
+        showNSNSHalpha,
+        nsnsHalphaOpacity,
+        nsnsHalphaBrightness,
+        nsnsHalphaColorized,
+        showEqGrid,
+        showGalGrid,
+        showCenterCrosshair,
+        showCamSim,
+      };
+      setMapState(state);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [
+    centerCoordText, documentLoaded, nsnsBrightness, nsnsColorized, nsnsHalphaBrightness,
+    nsnsHalphaColorized, nsnsHalphaOpacity, nsnsOpacity, showCamSim, showCenterCrosshair,
+    showDeepSkyPhotos, showEqGrid, showGalGrid, showNSNS, showNSNSHalpha, user?.id, viewRevision,
+  ]);
 
   /* ── load data ── */
   useEffect(() => {
@@ -862,6 +950,82 @@ export default function SkyMapCanvas() {
     setCamEntries(next);
     camEntriesRef.current = next;
     requestDraw();
+  }
+
+  function saveCurrentCameraField() {
+    if (!user || camEntries.length === 0) return;
+    const name = cameraFieldName.trim() || `视场 ${new Date().toLocaleDateString("zh-CN")}`;
+    saveCameraField({
+      id: crypto.randomUUID(),
+      name,
+      entries: camEntries.map((entry) => ({ ...entry })),
+      updatedAt: new Date().toISOString(),
+    });
+    setCameraFieldName("");
+  }
+
+  function loadCameraField(entries: CameraConfig[]) {
+    const next = entries.map((entry) => ({ ...entry }));
+    setCamEntries(next);
+    camEntriesRef.current = next;
+    setShowCamSim(true);
+    showCamSimRef.current = true;
+    requestDraw();
+  }
+
+  function addCenterFavorite() {
+    if (!user) return;
+    const fallback = `RA ${formatRaHms(centerRA.current)} / Dec ${formatDms(centerDec.current)}`;
+    saveFavoriteTarget({
+      id: crypto.randomUUID(),
+      name: favoriteName.trim() || searchQuery.trim() || fallback,
+      ra: centerRA.current,
+      dec: centerDec.current,
+      fov: fov.current,
+      createdAt: new Date().toISOString(),
+    });
+    setFavoriteName("");
+  }
+
+  function exportFavorites() {
+    const payload = {
+      schema: "jsyastro-favorite-targets",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      favoriteTargets: userDocument.favoriteTargets,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `jsyastro-targets-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importFavorites(file: File) {
+    try {
+      const payload = JSON.parse(await file.text()) as { favoriteTargets?: Partial<FavoriteTarget>[] };
+      if (!Array.isArray(payload.favoriteTargets)) throw new Error("JSON 中没有 favoriteTargets 数组");
+      const targets = payload.favoriteTargets.map((target, index) => {
+        const ra = Number(target.ra);
+        const dec = Number(target.dec);
+        if (!Number.isFinite(ra) || !Number.isFinite(dec)) throw new Error(`第 ${index + 1} 个目标坐标无效`);
+        return {
+          id: typeof target.id === "string" ? target.id : crypto.randomUUID(),
+          name: typeof target.name === "string" && target.name.trim() ? target.name.trim() : `目标 ${index + 1}`,
+          ra: ((ra % 360) + 360) % 360,
+          dec: clampDec(dec),
+          fov: Number.isFinite(Number(target.fov)) ? Number(target.fov) : undefined,
+          notes: typeof target.notes === "string" ? target.notes : undefined,
+          createdAt: typeof target.createdAt === "string" ? target.createdAt : new Date().toISOString(),
+        } satisfies FavoriteTarget;
+      });
+      importFavoriteTargets(targets);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "目标 JSON 导入失败");
+    } finally {
+      if (favoriteImportRef.current) favoriteImportRef.current.value = "";
+    }
   }
 
   /* ── draw ── */
@@ -2017,6 +2181,7 @@ export default function SkyMapCanvas() {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 0.8 : 1.25;
     fov.current = Math.max(MIN_FOV, Math.min(MAX_FOV, fov.current * factor));
+    setViewRevision((value) => value + 1);
     requestDraw();
   }, [requestDraw]);
 
@@ -2247,6 +2412,7 @@ export default function SkyMapCanvas() {
       if (lastPinchDist.current > 0) {
         const ratio = lastPinchDist.current / dist;
         fov.current = Math.max(MIN_FOV, Math.min(MAX_FOV, fov.current * ratio));
+        setViewRevision((value) => value + 1);
         requestDraw();
       }
       lastPinchDist.current = dist;
@@ -2300,6 +2466,11 @@ export default function SkyMapCanvas() {
               <span className="ml-2">{centerCoordText.l}</span>
               <span className="ml-3">{centerCoordText.b}</span>
             </div>
+          </div>
+          <div className="mt-2 border-t border-white/5 pt-1.5 font-sans text-[11px] text-white/35">
+            {user
+              ? `云同步：${syncStatus === "saving" ? "保存中…" : syncStatus === "error" ? "失败" : "已连接"}`
+              : "登录后可云端保存视场、收藏和浏览状态"}
           </div>
         </div>
 
@@ -2498,6 +2669,39 @@ export default function SkyMapCanvas() {
           />
         </div>
 
+        {/* Favorite targets */ }
+        <div className="px-3 py-2 border-b border-white/5">
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-white/40 text-[13px]">感兴趣目标</div>
+            <span className="text-[11px] text-white/25">{user ? `${userDocument.favoriteTargets.length} 个` : "需登录"}</span>
+          </div>
+          <div className="flex gap-1.5">
+            <input value={favoriteName} onChange={(event) => setFavoriteName(event.target.value)} placeholder="目标名称（可选）" disabled={!user}
+              onKeyDown={(event) => { if (event.key === "Enter") addCenterFavorite(); }}
+              className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/80 outline-none placeholder:text-white/20 disabled:opacity-35" />
+            <button onClick={addCenterFavorite} disabled={!user} className="rounded bg-amber-500/45 px-2 py-1 text-xs text-amber-50 hover:bg-amber-400/60 disabled:opacity-30">收藏中心</button>
+          </div>
+          {userDocument.favoriteTargets.length > 0 && (
+            <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto">
+              {userDocument.favoriteTargets.map((target) => (
+                <div key={target.id} className="flex items-center gap-1 rounded bg-white/[.035] px-1.5 py-1">
+                  <button onClick={() => jumpTo(target.ra, target.dec, target.fov)} title={`${target.ra.toFixed(5)}°, ${target.dec.toFixed(5)}°`}
+                    className="min-w-0 flex-1 truncate text-left text-xs text-white/65 hover:text-white">{target.name}</button>
+                  <button title="删除收藏" onClick={() => deleteFavoriteTarget(target.id)} className="rounded px-1 text-white/25 hover:bg-red-500/20 hover:text-red-200">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+            <button onClick={exportFavorites} disabled={!user || userDocument.favoriteTargets.length === 0}
+              className="rounded border border-white/10 py-1 text-xs text-white/50 hover:bg-white/5 disabled:opacity-25">导出目标 JSON</button>
+            <button onClick={() => favoriteImportRef.current?.click()} disabled={!user}
+              className="rounded border border-white/10 py-1 text-xs text-white/50 hover:bg-white/5 disabled:opacity-25">导入目标 JSON</button>
+            <input ref={favoriteImportRef} type="file" accept="application/json,.json" className="hidden"
+              onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFavorites(file); }} />
+          </div>
+        </div>
+
         {/* Camera sim toggle + panel */}
         <div className="px-3 py-2 border-b border-white/5">
           <button
@@ -2562,6 +2766,30 @@ export default function SkyMapCanvas() {
                 className="w-full py-1 rounded bg-indigo-500/40 text-white/80 hover:bg-indigo-400/60 text-xs">
                 + 添加视场
               </button>
+              <div className="mt-2 border-t border-white/5 pt-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-white/40">云端视场方案</span>
+                  <span className="text-[11px] text-white/25">{user ? `${userDocument.cameraFields.length} 个` : "需登录"}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input value={cameraFieldName} onChange={(event) => setCameraFieldName(event.target.value)} disabled={!user}
+                    onKeyDown={(event) => { if (event.key === "Enter") saveCurrentCameraField(); }}
+                    placeholder="方案名称" className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs outline-none placeholder:text-white/20 disabled:opacity-35" />
+                  <button onClick={saveCurrentCameraField} disabled={!user || camEntries.length === 0}
+                    className="rounded bg-emerald-500/45 px-2 py-1 text-xs text-emerald-50 hover:bg-emerald-400/60 disabled:opacity-30">保存</button>
+                </div>
+                {userDocument.cameraFields.length > 0 && (
+                  <div className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
+                    {userDocument.cameraFields.map((field) => (
+                      <div key={field.id} className="flex items-center gap-1 rounded bg-white/[.035] px-1.5 py-1">
+                        <button onClick={() => loadCameraField(field.entries)} className="min-w-0 flex-1 truncate text-left text-xs text-white/65 hover:text-white">{field.name}</button>
+                        <span className="text-[10px] text-white/25">{field.entries.length} 组</span>
+                        <button title="删除方案" onClick={() => deleteCameraField(field.id)} className="rounded px-1 text-white/25 hover:bg-red-500/20 hover:text-red-200">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

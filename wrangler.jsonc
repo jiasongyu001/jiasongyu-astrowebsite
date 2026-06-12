@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "jiasongyu-astrowebsite",
+  "pages_build_output_dir": "./out",
+  "compatibility_date": "2026-06-12",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "jsyastro-users",
+      "database_id": "df9c32ae-ad88-44f9-af93-fb84b01555f5"
+    }
+  ]
+}

@@ -62,6 +62,15 @@ git -c http.proxy="" -c https.proxy="" push origin main
 - 发布源数据和发布清单由兄弟目录 `DSSM-Aladin` 管理。
 - OIII 和 H-alpha 正式发布最高为 `Norder5`；深空照片详情图保持高分辨率。
 
+## 用户账户与云同步
+
+- Pages Functions 位于 `functions/`，D1 数据库迁移位于 `migrations/`。
+- D1 绑定名称固定为 `DB`，配置在 `wrangler.jsonc`。
+- 用户密码使用 PBKDF2-SHA256 加盐哈希；会话 Cookie 为 HttpOnly、Secure、SameSite=Lax。
+- 用户云文档保存 Aladin 星图的命名视场、兴趣目标与最后浏览状态。
+- `ADMIN_EMAIL` 通过 Cloudflare Pages Secret 设置；管理员只能查看用户数量与有效会话数量。
+- 本地全栈测试应先构建，再运行 `wrangler pages dev out`，不要只用 `next dev` 测试登录 API。
+
 ---
 
 ## 关联项目
