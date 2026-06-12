@@ -17,8 +17,7 @@ type UserDataContextValue = {
   documentLoaded: boolean;
   syncStatus: "idle" | "saving" | "saved" | "error";
   authError: string | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string) => Promise<boolean>;
+  login: (username: string, registrationCode?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   saveCameraField: (field: SavedCameraField) => void;
   deleteCameraField: (id: string) => void;
@@ -96,12 +95,12 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [document, documentLoaded, user]);
 
-  const authenticate = useCallback(async (mode: "login" | "register", email: string, password: string) => {
+  const login = useCallback(async (username: string, registrationCode = "") => {
     setAuthError(null);
     try {
-      const result = await api<{ user: AuthUser }>(`/api/auth/${mode}`, {
+      const result = await api<{ user: AuthUser }>("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, registrationCode }),
       });
       setUser(result.user);
       await loadDocument();
@@ -133,8 +132,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     documentLoaded,
     syncStatus,
     authError,
-    login: (email, password) => authenticate("login", email, password),
-    register: (email, password) => authenticate("register", email, password),
+    login,
     logout,
     saveCameraField: (field) => update((current) => ({
       ...current,
@@ -157,7 +155,7 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
       ...current,
       favoriteTargets: targets.slice(0, 1000),
     })),
-  }), [authError, authenticate, checkingAuth, document, documentLoaded, logout, syncStatus, update, user]);
+  }), [authError, checkingAuth, document, documentLoaded, login, logout, syncStatus, update, user]);
 
   return <UserDataContext.Provider value={value}>{children}</UserDataContext.Provider>;
 }

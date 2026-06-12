@@ -3,22 +3,18 @@ import type { Env } from "./types";
 
 const SESSION_COOKIE = "jsyastro_session";
 const SESSION_DAYS = 30;
-// Cloudflare Workers Web Crypto currently caps PBKDF2 at 100,000 iterations.
-const PASSWORD_ITERATIONS = 100_000;
 
 export type AuthUser = {
   id: string;
-  email: string;
+  username: string;
   isAdmin: boolean;
   createdAt: string;
 };
 
 type UserRow = {
   id: string;
-  email: string;
-  password_hash: string;
-  password_salt: string;
-  password_iterations: number;
+  username: string;
+  username_key: string;
   created_at: string;
 };
 
@@ -26,22 +22,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-function constantTimeEqual(left: string, right: string): boolean {
-  const a = base64ToBytes(left);
-  const b = base64ToBytes(right);
-  let difference = a.length ^ b.length;
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
-  }
-  return difference === 0;
 }
 
 async function sha256(value: string): Promise<string> {
@@ -52,7 +32,6 @@ async function sha256(value: string): Promise<string> {
 export async function enforceAuthRateLimit(
   env: Env,
   request: Request,
-  action: "login" | "register",
   limit: number,
   windowMinutes: number,
 ): Promise<Response | null> {
@@ -64,32 +43,16 @@ export async function enforceAuthRateLimit(
   const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
   const now = new Date().toISOString();
   await env.DB.prepare(
-    `INSERT INTO auth_rate_limits (key_hash, action, window_start, attempts, updated_at) VALUES (?, ?, ?, 1, ?)
+    `INSERT INTO auth_rate_limits (key_hash, action, window_start, attempts, updated_at) VALUES (?, 'username-login', ?, 1, ?)
      ON CONFLICT(key_hash, action, window_start) DO UPDATE SET attempts = attempts + 1, updated_at = excluded.updated_at`,
-  ).bind(keyHash, action, windowStart, now).run();
+  ).bind(keyHash, windowStart, now).run();
   const row = await env.DB.prepare(
-    "SELECT attempts FROM auth_rate_limits WHERE key_hash = ? AND action = ? AND window_start = ?",
-  ).bind(keyHash, action, windowStart).first<{ attempts: number }>();
+    "SELECT attempts FROM auth_rate_limits WHERE key_hash = ? AND action = 'username-login' AND window_start = ?",
+  ).bind(keyHash, windowStart).first<{ attempts: number }>();
   if ((row?.attempts ?? 0) > limit) {
     return json({ error: "尝试次数过多，请稍后再试" }, 429, { "retry-after": String(windowMinutes * 60) });
   }
   return null;
-}
-
-async function derivePassword(password: string, salt: Uint8Array, iterations: number): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations },
-    key,
-    256,
-  );
-  return bytesToBase64(new Uint8Array(bits));
 }
 
 function randomToken(bytes = 32): string {
@@ -98,46 +61,53 @@ function randomToken(bytes = 32): string {
   return bytesToBase64(value).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+function normalizeUsername(username: string): { display: string; key: string } {
+  const display = username.trim().replace(/\s+/g, " ");
+  return { display, key: display.toLocaleLowerCase("zh-CN") };
 }
 
-export function validateCredentials(email: string, password: string): string | null {
-  const normalized = normalizeEmail(email);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) || normalized.length > 254) return "请输入有效邮箱";
-  if (password.length < 10 || password.length > 128) return "密码长度需要为 10–128 个字符";
+export function validateUsername(username: string): string | null {
+  const { display } = normalizeUsername(username);
+  if (display.length < 2 || display.length > 32) return "用户名长度需要为 2–32 个字符";
+  if (/[\u0000-\u001f\u007f]/.test(display)) return "用户名包含无效字符";
   return null;
 }
 
-export async function createUser(env: Env, email: string, password: string): Promise<AuthUser> {
-  const normalized = normalizeEmail(email);
-  const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(normalized).first();
-  if (existing) throw new Error("该邮箱已注册");
-
-  const id = crypto.randomUUID();
-  const salt = new Uint8Array(16);
-  crypto.getRandomValues(salt);
-  const passwordHash = await derivePassword(password, salt, PASSWORD_ITERATIONS);
+export async function loginOrCreateUser(
+  env: Env,
+  username: string,
+  registrationCode: string,
+): Promise<{ user: AuthUser; created: boolean }> {
+  const { display, key } = normalizeUsername(username);
+  let row = await env.DB.prepare("SELECT id, username, username_key, created_at FROM users WHERE username_key = ?")
+    .bind(key).first<UserRow>();
+  let created = false;
   const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare(
-      "INSERT INTO users (id, email, password_hash, password_salt, password_iterations, created_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).bind(id, normalized, passwordHash, bytesToBase64(salt), PASSWORD_ITERATIONS, now, now),
-    env.DB.prepare(
-      "INSERT INTO user_documents (user_id, document_json, updated_at) VALUES (?, ?, ?)",
-    ).bind(id, JSON.stringify({ version: 1, cameraFields: [], favoriteTargets: [], mapState: null }), now),
-  ]);
-  return { id, email: normalized, isAdmin: isAdminEmail(env, normalized), createdAt: now };
-}
 
-export async function verifyUser(env: Env, email: string, password: string): Promise<AuthUser | null> {
-  const normalized = normalizeEmail(email);
-  const row = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(normalized).first<UserRow>();
-  if (!row) return null;
-  const hash = await derivePassword(password, base64ToBytes(row.password_salt), row.password_iterations);
-  if (!constantTimeEqual(hash, row.password_hash)) return null;
-  await env.DB.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").bind(new Date().toISOString(), row.id).run();
-  return { id: row.id, email: row.email, isAdmin: isAdminEmail(env, row.email), createdAt: row.created_at };
+  if (!row) {
+    if (!env.REGISTRATION_CODE || registrationCode !== env.REGISTRATION_CODE) {
+      throw new Error("REGISTRATION_CODE_INVALID");
+    }
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO users (id, username, username_key, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)",
+    ).bind(id, display, key, now, now).run();
+    row = await env.DB.prepare("SELECT id, username, username_key, created_at FROM users WHERE username_key = ?")
+      .bind(key).first<UserRow>();
+    if (!row) throw new Error("无法创建用户");
+    created = row.id === id;
+    if (created) {
+      await env.DB.prepare(
+        "INSERT INTO user_documents (user_id, document_json, updated_at) VALUES (?, ?, ?)",
+      ).bind(row.id, JSON.stringify({ version: 1, cameraFields: [], favoriteTargets: [], mapState: null }), now).run();
+    }
+  }
+
+  await env.DB.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").bind(now, row.id).run();
+  return {
+    user: { id: row.id, username: row.username, isAdmin: isAdminUsername(env, row.username_key), createdAt: row.created_at },
+    created,
+  };
 }
 
 export async function createSession(env: Env, userId: string, request: Request): Promise<string> {
@@ -166,12 +136,12 @@ export async function currentUser(env: Env, request: Request): Promise<AuthUser 
   if (!token) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    `SELECT users.id, users.email, users.created_at
+    `SELECT users.id, users.username, users.username_key, users.created_at
      FROM sessions JOIN users ON users.id = sessions.user_id
      WHERE sessions.token_hash = ? AND sessions.expires_at > ?`,
-  ).bind(hash, new Date().toISOString()).first<{ id: string; email: string; created_at: string }>();
+  ).bind(hash, new Date().toISOString()).first<UserRow>();
   if (!row) return null;
-  return { id: row.id, email: row.email, isAdmin: isAdminEmail(env, row.email), createdAt: row.created_at };
+  return { id: row.id, username: row.username, isAdmin: isAdminUsername(env, row.username_key), createdAt: row.created_at };
 }
 
 export async function requireUser(env: Env, request: Request): Promise<AuthUser | Response> {
@@ -189,6 +159,6 @@ export function clearSessionCookie(request: Request): string {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=0`;
 }
 
-function isAdminEmail(env: Env, email: string): boolean {
-  return Boolean(env.ADMIN_EMAIL && normalizeEmail(env.ADMIN_EMAIL) === normalizeEmail(email));
+function isAdminUsername(env: Env, usernameKey: string): boolean {
+  return Boolean(env.ADMIN_USERNAME && normalizeUsername(env.ADMIN_USERNAME).key === usernameKey);
 }

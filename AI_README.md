@@ -66,9 +66,12 @@ git -c http.proxy="" -c https.proxy="" push origin main
 
 - Pages Functions 位于 `functions/`，D1 数据库迁移位于 `migrations/`。
 - D1 绑定名称固定为 `DB`，配置在 `wrangler.jsonc`。
-- 用户密码使用 PBKDF2-SHA256 加盐哈希；会话 Cookie 为 HttpOnly、Secure、SameSite=Lax。
+- 用户首次输入未使用的用户名会自动创建空间，之后输入同一用户名直接登录；没有邮箱和密码。
+- 用户名空间不具备身份保密性，任何知道用户名的人都可以进入；会话 Cookie 为 HttpOnly、Secure、SameSite=Lax。
 - 用户云文档保存 Aladin 星图的命名视场、兴趣目标与最后浏览状态。
-- `ADMIN_EMAIL` 通过 Cloudflare Pages Secret 设置；管理员只能查看用户数量与有效会话数量。
+- 未登录用户只能请求深空照片 `256px` LOD，以及 OIII/H-alpha 的 `Norder0` 最模糊瓦片；登录后才启用完整分辨率和详情图。
+- `ADMIN_USERNAME` 通过 Cloudflare Pages Secret 设置；管理员只能查看用户数量与有效会话数量。
+- `REGISTRATION_CODE` 通过 Cloudflare Pages Secret 设置；仅首次创建用户名时校验，已有用户登录不需要注册码。
 - 本地全栈测试应先构建，再运行 `wrangler pages dev out`，不要只用 `next dev` 测试登录 API。
 - Git 自动构建当前只发布静态文件，不能作为含 Functions 版本的最终部署。推送代码后必须执行 `npm run deploy:production`，并确认 `/api/auth/me` 返回 200。
 

@@ -116,6 +116,7 @@ const NSNS_HIPS_URL = `${ALADIN_ASSET_ORIGIN}/NSNS_DR0.2_OIII_nonlinear_HiPS`;
 const NSNS_HALPHA_HIPS_URL = `${ALADIN_ASSET_ORIGIN}/NSNS_DR0.2_Halpha_nonlinear_HiPS`;
 const NSNS_ORDER6_COVERAGE_URL = `${SKYMAP_ASSET_URL}/nsns_order6_coverage.json`;
 const NSNS_MAX_ORDER = 5;
+const NSNS_PREVIEW_MAX_ORDER = 0;
 const NSNS_OIII_COLOR = "#32C8FF";
 const NSNS_HALPHA_COLOR = "#FF2424";
 const PHOTO_LOD_LEVELS = [256, 512, 1024, 2048] as const;
@@ -375,6 +376,8 @@ export default function SkyMapCanvas() {
     setMapState,
     importFavoriteTargets,
   } = useUserData();
+  const hasFullResolution = Boolean(user);
+  const hasFullResolutionRef = useRef(hasFullResolution);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const layerCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -557,6 +560,30 @@ export default function SkyMapCanvas() {
   const restoredUserRef = useRef<string | null>(null);
 
   useEffect(() => {
+    hasFullResolutionRef.current = hasFullResolution;
+    for (const overlay of overlays.current) {
+      overlay.showDetail = false;
+      overlay.detailImg = undefined;
+      if (!hasFullResolution && (overlay.imgLod ?? 0) > PHOTO_LOD_LEVELS[0]) {
+        overlay.img = undefined;
+        overlay.imgLod = undefined;
+        overlay.pendingImg = undefined;
+        overlay.pendingLod = undefined;
+      }
+    }
+    setSelectedOverlay(null);
+    setDetailLoading(null);
+    nsnsAladinRef.current = null;
+    nsnsRequestedViewRef.current = "";
+    nsnsHalphaAladinRef.current = null;
+    nsnsHalphaRequestedViewRef.current = "";
+    if (nsnsHostRef.current) nsnsHostRef.current.replaceChildren();
+    if (nsnsHalphaHostRef.current) nsnsHalphaHostRef.current.replaceChildren();
+    invalidatePhotoLayer();
+    requestDraw();
+  }, [hasFullResolution, requestDraw]);
+
+  useEffect(() => {
     if (!user || !documentLoaded || restoredUserRef.current === user.id) return;
     restoredUserRef.current = user.id;
     const state = userDocument.mapState;
@@ -735,7 +762,7 @@ export default function SkyMapCanvas() {
         "NSNS DR0.2 [OIII] nonlinear",
         NSNS_HIPS_URL,
         "equatorial",
-        NSNS_MAX_ORDER,
+        hasFullResolution ? NSNS_MAX_ORDER : NSNS_PREVIEW_MAX_ORDER,
         { imgFormat: "png" },
       );
       aladin.setBaseImageLayer(survey);
@@ -749,7 +776,7 @@ export default function SkyMapCanvas() {
     });
 
     return () => { cancelled = true; };
-  }, [showNSNS, requestDraw]);
+  }, [hasFullResolution, showNSNS, requestDraw]);
 
   useEffect(() => {
     if (!showNSNSHalpha || nsnsHalphaAladinRef.current || !nsnsHalphaHostRef.current) return;
@@ -785,7 +812,7 @@ export default function SkyMapCanvas() {
         "NSNS DR0.2 H-alpha nonlinear",
         NSNS_HALPHA_HIPS_URL,
         "equatorial",
-        NSNS_MAX_ORDER,
+        hasFullResolution ? NSNS_MAX_ORDER : NSNS_PREVIEW_MAX_ORDER,
         { imgFormat: "png" },
       );
       aladin.setBaseImageLayer(survey);
@@ -799,7 +826,7 @@ export default function SkyMapCanvas() {
     });
 
     return () => { cancelled = true; };
-  }, [showNSNSHalpha, requestDraw]);
+  }, [hasFullResolution, showNSNSHalpha, requestDraw]);
 
   /* ── search index ── */
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
@@ -1819,6 +1846,7 @@ export default function SkyMapCanvas() {
   }
 
   function choosePhotoLod(screenPoints: [number, number][]): number {
+    if (!hasFullResolutionRef.current) return PHOTO_LOD_LEVELS[0];
     const xs = screenPoints.map((point) => point[0]);
     const ys = screenPoints.map((point) => point[1]);
     const required = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.25;
@@ -2309,7 +2337,7 @@ export default function SkyMapCanvas() {
           const hit = showDeepSkyPhotosRef.current
             ? hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2)
             : null;
-          if (hit) {
+          if (hit && hasFullResolutionRef.current) {
             if (hit.showDetail) {
               // Already showing detail → switch back to preview
               hit.showDetail = false;
@@ -2470,7 +2498,7 @@ export default function SkyMapCanvas() {
           <div className="mt-2 border-t border-white/5 pt-1.5 font-sans text-[11px] text-white/35">
             {user
               ? `云同步：${syncStatus === "saving" ? "保存中…" : syncStatus === "error" ? "失败" : "已连接"}`
-              : "登录后可云端保存视场、收藏和浏览状态"}
+              : "预览模式：瓦片与深空照片仅显示最模糊层"}
           </div>
         </div>
 

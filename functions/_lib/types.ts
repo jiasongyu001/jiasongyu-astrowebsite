@@ -17,7 +17,8 @@ export interface D1Database {
 
 export interface Env {
   DB: D1Database;
-  ADMIN_EMAIL?: string;
+  ADMIN_USERNAME?: string;
+  REGISTRATION_CODE?: string;
 }
 
 export interface FunctionContext {

@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "dev:fullstack": "npm run build && wrangler pages dev out",
-    "db:migrate:local": "wrangler d1 execute jsyastro-users --local --file migrations/0001_user_accounts.sql && wrangler d1 execute jsyastro-users --local --file migrations/0002_auth_rate_limits.sql",
+    "db:migrate:local": "wrangler d1 execute jsyastro-users --local --file migrations/0001_user_accounts.sql && wrangler d1 execute jsyastro-users --local --file migrations/0002_auth_rate_limits.sql && wrangler d1 execute jsyastro-users --local --file migrations/0003_username_login.sql",
     "deploy:production": "npm run build && wrangler pages deploy out --project-name jiasongyu-astrowebsite --branch main"
   },
   "dependencies": {
