@@ -2447,7 +2447,7 @@ export default function SkyMapCanvas() {
           const hit = showDeepSkyPhotosRef.current
             ? hitTestOverlay(pos.x, pos.y, sc, c, W / 2, H / 2)
             : null;
-          if (hit && hasFullResolutionRef.current) {
+          if (hit) {
             if (hit.showDetail) {
               // Already showing detail → switch back to preview
               hit.showDetail = false;
@@ -2608,7 +2608,7 @@ export default function SkyMapCanvas() {
           <div className="mt-2 border-t border-white/5 pt-1.5 font-sans text-[11px] text-white/35">
             {user
               ? `云同步：${syncStatus === "saving" ? "保存中…" : syncStatus === "error" ? "失败" : "已连接"}`
-              : "预览模式：深空照片提供粗预览；登录后可用高清与 OIII / H-alpha"}
+              : "访客模式：深空照片可点击查看高清；登录后可用 OIII / H-alpha"}
           </div>
         </div>
 
