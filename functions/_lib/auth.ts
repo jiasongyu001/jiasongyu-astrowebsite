@@ -99,7 +99,14 @@ export async function loginOrCreateUser(
     if (created) {
       await env.DB.prepare(
         "INSERT INTO user_documents (user_id, document_json, updated_at) VALUES (?, ?, ?)",
-      ).bind(row.id, JSON.stringify({ version: 1, cameraFields: [], favoriteTargets: [], mapState: null }), now).run();
+      ).bind(row.id, JSON.stringify({
+        version: 1,
+        cameraFields: [],
+        cameraEntries: [],
+        favoriteTargets: [],
+        cameraCandidateTargets: [],
+        mapState: null,
+      }), now).run();
     }
   }
 

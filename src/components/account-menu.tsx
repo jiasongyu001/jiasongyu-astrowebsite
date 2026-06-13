@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LogIn, LogOut, ShieldCheck, UserRound, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import Link from "next/link";
+import { Database, LogIn, LogOut, ShieldCheck, UserRound, X } from "lucide-react";
 import { useUserData } from "@/components/user-data-provider";
 
 export function AccountMenu() {
@@ -35,9 +37,9 @@ export function AccountMenu() {
         <UserRound size={17} />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 px-4" onMouseDown={() => setOpen(false)}>
-          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-[#151518] p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+      {open && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-start justify-center overflow-y-auto bg-black/65 px-4 py-[max(1rem,env(safe-area-inset-top))]" onMouseDown={() => setOpen(false)}>
+          <div className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-lg border border-white/10 bg-[#151518] p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="font-semibold">{user ? "账户与云同步" : "用户名登录"}</div>
@@ -61,6 +63,10 @@ export function AccountMenu() {
                       <div className="rounded bg-black/20 p-2"><div className="text-lg font-semibold">{stats?.totalUsers ?? "–"}</div><div className="text-[11px] text-white/40">用户名数量</div></div>
                       <div className="rounded bg-black/20 p-2"><div className="text-lg font-semibold">{stats?.activeSessions ?? "–"}</div><div className="text-[11px] text-white/40">有效会话</div></div>
                     </div>
+                    <Link href="/admin/data" onClick={() => setOpen(false)}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-cyan-300/20 py-2 text-xs text-cyan-100/75 hover:bg-cyan-300/10">
+                      <Database size={14} />打开用户数据管理
+                    </Link>
                   </div>
                 )}
                 <button onClick={logout} className="flex w-full items-center justify-center gap-2 rounded-md border border-white/10 py-2 text-sm text-white/65 hover:bg-white/5 hover:text-white">
@@ -81,7 +87,8 @@ export function AccountMenu() {
               </form>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

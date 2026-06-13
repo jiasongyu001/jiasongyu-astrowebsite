@@ -11,7 +11,14 @@ export async function onRequestGet(context: FunctionContext): Promise<Response> 
     const row = await context.env.DB.prepare("SELECT document_json, updated_at FROM user_documents WHERE user_id = ?")
       .bind(user.id).first<{ document_json: string; updated_at: string }>();
     return json({
-      document: row ? JSON.parse(row.document_json) : { version: 1, cameraFields: [], favoriteTargets: [], mapState: null },
+      document: row ? JSON.parse(row.document_json) : {
+        version: 1,
+        cameraFields: [],
+        cameraEntries: [],
+        favoriteTargets: [],
+        cameraCandidateTargets: [],
+        mapState: null,
+      },
       updatedAt: row?.updated_at ?? null,
     });
   } catch (error) {

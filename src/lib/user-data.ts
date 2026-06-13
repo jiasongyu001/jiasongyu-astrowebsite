@@ -6,6 +6,10 @@ export type AuthUser = {
 };
 
 export type CameraConfig = {
+  id?: string;
+  name?: string;
+  hidden?: boolean;
+  collapsed?: boolean;
   focal: number;
   sw: number;
   sh: number;
@@ -32,6 +36,18 @@ export type FavoriteTarget = {
   createdAt: string;
 };
 
+export type CameraCandidateTarget = {
+  id: string;
+  cameraId?: string;
+  name: string;
+  ra: number;
+  dec: number;
+  fov: number;
+  entries: CameraConfig[];
+  hidden?: boolean;
+  createdAt: string;
+};
+
 export type SkyMapState = {
   centerRA: number;
   centerDec: number;
@@ -54,13 +70,17 @@ export type SkyMapState = {
 export type UserDocument = {
   version: 1;
   cameraFields: SavedCameraField[];
+  cameraEntries: CameraConfig[];
   favoriteTargets: FavoriteTarget[];
+  cameraCandidateTargets: CameraCandidateTarget[];
   mapState: SkyMapState | null;
 };
 
 export const EMPTY_USER_DOCUMENT: UserDocument = {
   version: 1,
   cameraFields: [],
+  cameraEntries: [],
   favoriteTargets: [],
+  cameraCandidateTargets: [],
   mapState: null,
 };

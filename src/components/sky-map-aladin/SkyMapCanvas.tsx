@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
+import { Search } from "lucide-react";
 import { stereoFwd, stereoInv, makeCenter, computeScale, eqToGal, galToEq } from "./projection";
 import { CONSTELLATION_LINES } from "./constellations";
 import type { ProjCenter } from "./projection";
 import { useUserData } from "@/components/user-data-provider";
-import type { CameraConfig, FavoriteTarget, SkyMapState } from "@/lib/user-data";
+import type { CameraCandidateTarget, CameraConfig, SkyMapState } from "@/lib/user-data";
 
 /* ── types ── */
 interface Star {
@@ -116,10 +117,10 @@ const NSNS_HIPS_URL = `${ALADIN_ASSET_ORIGIN}/NSNS_DR0.2_OIII_nonlinear_HiPS`;
 const NSNS_HALPHA_HIPS_URL = `${ALADIN_ASSET_ORIGIN}/NSNS_DR0.2_Halpha_nonlinear_HiPS`;
 const NSNS_ORDER6_COVERAGE_URL = `${SKYMAP_ASSET_URL}/nsns_order6_coverage.json`;
 const NSNS_MAX_ORDER = 5;
-const NSNS_PREVIEW_MAX_ORDER = 0;
 const NSNS_OIII_COLOR = "#32C8FF";
 const NSNS_HALPHA_COLOR = "#FF2424";
 const PHOTO_LOD_LEVELS = [256, 512, 1024, 2048] as const;
+const GUEST_PHOTO_MAX_LOD = 1024;
 const DSO_COLOR = [199, 125, 255] as const;
 
 function healpixNestAng2pix(order: number, raDeg: number, decDeg: number): number {
@@ -244,13 +245,14 @@ function clampDec(value: number): number {
 }
 
 /* ── toggle button ── */
-function ToggleBtn({ label, on, bg, color, onClick }: {
-  label: string; on: boolean; bg: string; color: string; onClick: () => void;
+function ToggleBtn({ label, on, bg, color, onClick, disabled = false }: {
+  label: string; on: boolean; bg: string; color: string; onClick: () => void; disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className="px-2.5 py-1 rounded text-[13px] font-medium transition-all select-none"
+      disabled={disabled}
+      className="px-2.5 py-1 rounded text-[13px] font-medium transition-all select-none disabled:cursor-not-allowed disabled:opacity-35"
       style={{
         background: on ? bg : "rgba(60,60,60,.7)",
         color: on ? color : "#888",
@@ -369,12 +371,10 @@ export default function SkyMapCanvas() {
     document: userDocument,
     documentLoaded,
     syncStatus,
-    saveCameraField,
-    deleteCameraField,
-    saveFavoriteTarget,
-    deleteFavoriteTarget,
+    saveCameraCandidateTarget,
+    deleteCameraCandidateTarget,
+    setCameraEntries,
     setMapState,
-    importFavoriteTargets,
   } = useUserData();
   const hasFullResolution = Boolean(user);
   const hasFullResolutionRef = useRef(hasFullResolution);
@@ -554,17 +554,29 @@ export default function SkyMapCanvas() {
   const [camEntries, setCamEntries] = useState<CamConfig[]>([]);
   const camEntriesRef = useRef<CamConfig[]>([]);
   const showCamSimRef = useRef(false);
-  const [cameraFieldName, setCameraFieldName] = useState("");
-  const [favoriteName, setFavoriteName] = useState("");
-  const favoriteImportRef = useRef<HTMLInputElement>(null);
+  const [candidateNames, setCandidateNames] = useState<Record<string, string>>({});
+  const [candidateGroupsCollapsed, setCandidateGroupsCollapsed] = useState<Record<string, boolean>>({});
+  const [searchToolsExpanded, setSearchToolsExpanded] = useState(false);
   const restoredUserRef = useRef<string | null>(null);
+  const cameraCandidateTargetsRef = useRef<CameraCandidateTarget[]>([]);
+
+  useEffect(() => {
+    cameraCandidateTargetsRef.current = userDocument.cameraCandidateTargets;
+    requestDraw();
+  }, [requestDraw, userDocument.cameraCandidateTargets]);
 
   useEffect(() => {
     hasFullResolutionRef.current = hasFullResolution;
+    if (!hasFullResolution) {
+      setShowNSNS(false);
+      showNSNSRef.current = false;
+      setShowNSNSHalpha(false);
+      showNSNSHalphaRef.current = false;
+    }
     for (const overlay of overlays.current) {
       overlay.showDetail = false;
       overlay.detailImg = undefined;
-      if (!hasFullResolution && (overlay.imgLod ?? 0) > PHOTO_LOD_LEVELS[0]) {
+      if (!hasFullResolution && (overlay.imgLod ?? 0) > GUEST_PHOTO_MAX_LOD) {
         overlay.img = undefined;
         overlay.imgLod = undefined;
         overlay.pendingImg = undefined;
@@ -586,23 +598,31 @@ export default function SkyMapCanvas() {
   useEffect(() => {
     if (!user || !documentLoaded || restoredUserRef.current === user.id) return;
     restoredUserRef.current = user.id;
+    const restoredEntries = userDocument.cameraEntries.map(normalizeCamEntry);
     const state = userDocument.mapState;
-    if (!state) return;
+    if (!state) {
+      if (restoredEntries.length > 0) {
+        setCamEntries(restoredEntries);
+        camEntriesRef.current = restoredEntries;
+      }
+      requestDraw();
+      return;
+    }
     centerRA.current = state.centerRA;
     centerDec.current = state.centerDec;
     fov.current = state.fov;
     setShowDeepSkyPhotos(state.showDeepSkyPhotos);
     showDeepSkyPhotosRef.current = state.showDeepSkyPhotos;
-    setShowNSNS(state.showNSNS);
-    showNSNSRef.current = state.showNSNS;
+    setShowNSNS(Boolean(user) && state.showNSNS);
+    showNSNSRef.current = Boolean(user) && state.showNSNS;
     setNSNSOpacity(state.nsnsOpacity);
     nsnsOpacityRef.current = state.nsnsOpacity / 100;
     setNSNSBrightness(state.nsnsBrightness);
     nsnsBrightnessRef.current = state.nsnsBrightness;
     setNSNSColorized(state.nsnsColorized);
     nsnsColorizedRef.current = state.nsnsColorized;
-    setShowNSNSHalpha(state.showNSNSHalpha);
-    showNSNSHalphaRef.current = state.showNSNSHalpha;
+    setShowNSNSHalpha(Boolean(user) && state.showNSNSHalpha);
+    showNSNSHalphaRef.current = Boolean(user) && state.showNSNSHalpha;
     setNSNSHalphaOpacity(state.nsnsHalphaOpacity);
     nsnsHalphaOpacityRef.current = state.nsnsHalphaOpacity / 100;
     setNSNSHalphaBrightness(state.nsnsHalphaBrightness);
@@ -617,6 +637,12 @@ export default function SkyMapCanvas() {
     showCenterCrosshairRef.current = state.showCenterCrosshair;
     setShowCamSim(state.showCamSim);
     showCamSimRef.current = state.showCamSim;
+    const activeEntries = restoredEntries.length > 0 ? restoredEntries : (state.showCamSim ? [createCamEntry()] : []);
+    if (activeEntries.length > 0) {
+      setCamEntries(activeEntries);
+      camEntriesRef.current = activeEntries;
+      if (restoredEntries.length === 0) setCameraEntries(activeEntries);
+    }
     updateCenterCoord(true);
     invalidatePhotoLayer();
     requestDraw();
@@ -762,7 +788,7 @@ export default function SkyMapCanvas() {
         "NSNS DR0.2 [OIII] nonlinear",
         NSNS_HIPS_URL,
         "equatorial",
-        hasFullResolution ? NSNS_MAX_ORDER : NSNS_PREVIEW_MAX_ORDER,
+        NSNS_MAX_ORDER,
         { imgFormat: "png" },
       );
       aladin.setBaseImageLayer(survey);
@@ -812,7 +838,7 @@ export default function SkyMapCanvas() {
         "NSNS DR0.2 H-alpha nonlinear",
         NSNS_HALPHA_HIPS_URL,
         "equatorial",
-        hasFullResolution ? NSNS_MAX_ORDER : NSNS_PREVIEW_MAX_ORDER,
+        NSNS_MAX_ORDER,
         { imgFormat: "png" },
       );
       aladin.setBaseImageLayer(survey);
@@ -954,19 +980,41 @@ export default function SkyMapCanvas() {
   }
 
   /* ── camera entry management ── */
+  function normalizeCamEntry(entry: CameraConfig): CamConfig {
+    return {
+      ...entry,
+      id: entry.id || crypto.randomUUID(),
+      name: entry.name || "",
+      hidden: Boolean(entry.hidden),
+      collapsed: Boolean(entry.collapsed),
+    };
+  }
+
+  function createCamEntry(): CamConfig {
+    return normalizeCamEntry({ focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 });
+  }
+
+  function commitCamEntries(next: CamConfig[]) {
+    setCamEntries(next);
+    camEntriesRef.current = next;
+    if (user) setCameraEntries(next.map((entry) => ({ ...entry })));
+    requestDraw();
+  }
+
   function addCamEntry() {
-    const next = [...camEntries, { focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
-    setCamEntries(next);
-    camEntriesRef.current = next;
-    requestDraw();
+    commitCamEntries([...camEntries, createCamEntry()]);
   }
+
   function removeCamEntry(idx: number) {
-    const next = camEntries.filter((_, i) => i !== idx);
-    setCamEntries(next);
-    camEntriesRef.current = next;
-    requestDraw();
+    const entry = camEntries[idx];
+    if (!entry || !window.confirm("将删除视场与候选目标")) return;
+    commitCamEntries(camEntries.filter((_, index) => index !== idx));
+    for (const target of userDocument.cameraCandidateTargets) {
+      if (target.cameraId === entry.id || (!target.cameraId && idx === 0)) deleteCameraCandidateTarget(target.id);
+    }
   }
-  function updateCamEntry(idx: number, field: keyof CamConfig, value: string) {
+
+  function updateCamEntry(idx: number, field: "focal" | "sw" | "sh" | "angle" | "mosX" | "mosY" | "overlap", value: string) {
     const next = camEntries.map((c, i) => {
       if (i !== idx) return c;
       const v = parseFloat(value) || 0;
@@ -974,84 +1022,48 @@ export default function SkyMapCanvas() {
       if (field === "mosX" || field === "mosY") updated[field] = Math.max(1, Math.round(v));
       return updated;
     });
-    setCamEntries(next);
-    camEntriesRef.current = next;
-    requestDraw();
+    commitCamEntries(next);
   }
 
-  function saveCurrentCameraField() {
-    if (!user || camEntries.length === 0) return;
-    const name = cameraFieldName.trim() || `视场 ${new Date().toLocaleDateString("zh-CN")}`;
-    saveCameraField({
+  function patchCamEntry(idx: number, patch: Partial<CamConfig>) {
+    commitCamEntries(camEntries.map((entry, index) => index === idx ? { ...entry, ...patch } : entry));
+  }
+
+  function targetsForCamera(entry: CamConfig, index: number): CameraCandidateTarget[] {
+    return userDocument.cameraCandidateTargets.filter((target) =>
+      target.cameraId === entry.id || (!target.cameraId && index === 0)
+    );
+  }
+
+  function recordCameraCandidate(entry: CamConfig, index: number) {
+    if (!user || !entry.id) return;
+    const groupTargets = targetsForCamera(entry, index);
+    const candidateName = candidateNames[entry.id] || "";
+    const fallback = `候选目标 ${groupTargets.length + 1}`;
+    saveCameraCandidateTarget({
       id: crypto.randomUUID(),
-      name,
-      entries: camEntries.map((entry) => ({ ...entry })),
-      updatedAt: new Date().toISOString(),
-    });
-    setCameraFieldName("");
-  }
-
-  function loadCameraField(entries: CameraConfig[]) {
-    const next = entries.map((entry) => ({ ...entry }));
-    setCamEntries(next);
-    camEntriesRef.current = next;
-    setShowCamSim(true);
-    showCamSimRef.current = true;
-    requestDraw();
-  }
-
-  function addCenterFavorite() {
-    if (!user) return;
-    const fallback = `RA ${formatRaHms(centerRA.current)} / Dec ${formatDms(centerDec.current)}`;
-    saveFavoriteTarget({
-      id: crypto.randomUUID(),
-      name: favoriteName.trim() || searchQuery.trim() || fallback,
+      cameraId: entry.id,
+      name: candidateName.trim() || searchQuery.trim() || fallback,
       ra: centerRA.current,
       dec: centerDec.current,
       fov: fov.current,
+      entries: [{ ...entry, hidden: false, collapsed: false }],
+      hidden: false,
       createdAt: new Date().toISOString(),
     });
-    setFavoriteName("");
+    setCandidateNames((current) => ({ ...current, [entry.id!]: "" }));
+    setCandidateGroupsCollapsed((current) => ({ ...current, [entry.id!]: false }));
   }
 
-  function exportFavorites() {
-    const payload = {
-      schema: "jsyastro-favorite-targets",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      favoriteTargets: userDocument.favoriteTargets,
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `jsyastro-targets-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  function renameCameraCandidate(target: CameraCandidateTarget, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === target.name) return;
+    saveCameraCandidateTarget({ ...target, name: trimmed });
   }
 
-  async function importFavorites(file: File) {
-    try {
-      const payload = JSON.parse(await file.text()) as { favoriteTargets?: Partial<FavoriteTarget>[] };
-      if (!Array.isArray(payload.favoriteTargets)) throw new Error("JSON 中没有 favoriteTargets 数组");
-      const targets = payload.favoriteTargets.map((target, index) => {
-        const ra = Number(target.ra);
-        const dec = Number(target.dec);
-        if (!Number.isFinite(ra) || !Number.isFinite(dec)) throw new Error(`第 ${index + 1} 个目标坐标无效`);
-        return {
-          id: typeof target.id === "string" ? target.id : crypto.randomUUID(),
-          name: typeof target.name === "string" && target.name.trim() ? target.name.trim() : `目标 ${index + 1}`,
-          ra: ((ra % 360) + 360) % 360,
-          dec: clampDec(dec),
-          fov: Number.isFinite(Number(target.fov)) ? Number(target.fov) : undefined,
-          notes: typeof target.notes === "string" ? target.notes : undefined,
-          createdAt: typeof target.createdAt === "string" ? target.createdAt : new Date().toISOString(),
-        } satisfies FavoriteTarget;
-      });
-      importFavoriteTargets(targets);
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "目标 JSON 导入失败");
-    } finally {
-      if (favoriteImportRef.current) favoriteImportRef.current.value = "";
+  function setCameraTargetsHidden(entry: CamConfig, index: number, hidden: boolean) {
+    for (const target of targetsForCamera(entry, index)) {
+      saveCameraCandidateTarget({ ...target, hidden });
     }
   }
 
@@ -1069,8 +1081,6 @@ export default function SkyMapCanvas() {
 
     const c = makeCenter(centerRA.current, centerDec.current);
     const sc = computeScale(W, fov.current);
-    const lightweight = isDraggingView.current;
-
     // Background
     ctx.fillStyle = "#08080f";
     ctx.fillRect(0, 0, W, H);
@@ -1090,12 +1100,11 @@ export default function SkyMapCanvas() {
     }
     if (nsnsAbovePhotosRef.current) drawNSNSTiles(ctx, sc, c, cx, cy, W, H);
     if (nsnsHalphaAbovePhotosRef.current) drawNSNSHalphaTiles(ctx, sc, c, cx, cy, W, H);
-    if (!lightweight) {
-      drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
-      drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
-      drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
-      drawCamFov(ctx, sc, cx, cy);
-    }
+    drawRecordedCameraCandidates(ctx, sc, c, cx, cy, W, H);
+    drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawCamFov(ctx, sc, cx, cy);
 
     // Crosshair
     if (showCenterCrosshairRef.current) {
@@ -1378,6 +1387,72 @@ export default function SkyMapCanvas() {
   }
 
   /* ── camera FoV simulation ── */
+  function drawRecordedCameraCandidates(
+    ctx: CanvasRenderingContext2D, sc: number, c: ProjCenter,
+    cx: number, cy: number, W: number, H: number
+  ) {
+    const dpr = window.devicePixelRatio || 1;
+    for (const target of cameraCandidateTargetsRef.current) {
+      if (target.hidden) continue;
+      const [x, y, cc] = stereoFwd(target.ra, target.dec, c);
+      if (cc < -0.2) continue;
+      const tx = cx - x * sc;
+      const ty = cy - y * sc;
+      if (tx < -W || tx > W * 2 || ty < -H || ty > H * 2) continue;
+
+      let labelX = tx;
+      let labelY = ty;
+      for (const cfg of target.entries) {
+        const { focal, sw, sh, angle, mosX, mosY, overlap } = cfg;
+        if (focal <= 0 || sw <= 0 || sh <= 0) continue;
+        const halfW = 2 * Math.tan(Math.atan(sw / (2 * focal)) / 2) * sc;
+        const halfH = 2 * Math.tan(Math.atan(sh / (2 * focal)) / 2) * sc;
+        const cosA = Math.cos(angle * Math.PI / 180);
+        const sinA = Math.sin(angle * Math.PI / 180);
+        const olap = Math.max(0, Math.min(99, overlap)) / 100;
+        const stepW = halfW * 2 * (1 - olap);
+        const stepH = halfH * 2 * (1 - olap);
+        const totalHW = mosX > 1 ? halfW + stepW * (mosX - 1) / 2 : halfW;
+        const totalHH = mosY > 1 ? halfH + stepH * (mosY - 1) / 2 : halfH;
+        const rot = (px: number, py: number): [number, number] => [
+          px * cosA - py * sinA, px * sinA + py * cosA,
+        ];
+
+        ctx.strokeStyle = "rgba(255,190,70,0.78)";
+        ctx.lineWidth = 1.2 * dpr;
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        for (let ix = 0; ix < mosX; ix++) {
+          for (let iy = 0; iy < mosY; iy++) {
+            const pcx = mosX > 1 ? stepW * (ix - (mosX - 1) / 2) : 0;
+            const pcy = mosY > 1 ? stepH * (iy - (mosY - 1) / 2) : 0;
+            const corners: [number, number][] = [
+              [pcx - halfW, pcy - halfH], [pcx + halfW, pcy - halfH],
+              [pcx + halfW, pcy + halfH], [pcx - halfW, pcy + halfH],
+            ];
+            ctx.beginPath();
+            for (let index = 0; index < corners.length; index++) {
+              const [rx, ry] = rot(corners[index][0], corners[index][1]);
+              if (index === 0) ctx.moveTo(tx + rx, ty + ry);
+              else ctx.lineTo(tx + rx, ty + ry);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+        const [topRightX, topRightY] = rot(totalHW, -totalHH);
+        labelX = Math.max(labelX, tx + topRightX);
+        labelY = Math.min(labelY, ty + topRightY);
+      }
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(255,210,120,0.94)";
+      ctx.font = `${11 * dpr}px sans-serif`;
+      ctx.fillText(target.name, labelX + 5 * dpr, labelY - 18 * dpr);
+      ctx.fillStyle = "rgba(255,210,120,0.68)";
+      ctx.font = `${10 * dpr}px monospace`;
+      ctx.fillText(`${formatRaHms(target.ra)}  ${formatDms(target.dec)}`, labelX + 5 * dpr, labelY - 5 * dpr);
+    }
+  }
+
   function drawCamFov(
     ctx: CanvasRenderingContext2D, sc: number, cx: number, cy: number
   ) {
@@ -1388,6 +1463,7 @@ export default function SkyMapCanvas() {
     ctx.font = `${11 * dpr}px sans-serif`;
 
     for (const cfg of cfgs) {
+      if (cfg.hidden) continue;
       const { focal, sw, sh, angle, mosX, mosY, overlap } = cfg;
       if (focal <= 0 || sw <= 0 || sh <= 0) continue;
       const hwRad = Math.atan(sw / (2 * focal));
@@ -1846,11 +1922,11 @@ export default function SkyMapCanvas() {
   }
 
   function choosePhotoLod(screenPoints: [number, number][]): number {
-    if (!hasFullResolutionRef.current) return PHOTO_LOD_LEVELS[0];
     const xs = screenPoints.map((point) => point[0]);
     const ys = screenPoints.map((point) => point[1]);
     const required = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.25;
-    return PHOTO_LOD_LEVELS.find((level) => level >= required) ?? PHOTO_LOD_LEVELS[PHOTO_LOD_LEVELS.length - 1];
+    const selected = PHOTO_LOD_LEVELS.find((level) => level >= required) ?? PHOTO_LOD_LEVELS[PHOTO_LOD_LEVELS.length - 1];
+    return hasFullResolutionRef.current ? selected : Math.min(selected, GUEST_PHOTO_MAX_LOD);
   }
 
   function requestPhotoPreview(ov: Overlay, lod: number) {
@@ -2498,7 +2574,7 @@ export default function SkyMapCanvas() {
           <div className="mt-2 border-t border-white/5 pt-1.5 font-sans text-[11px] text-white/35">
             {user
               ? `云同步：${syncStatus === "saving" ? "保存中…" : syncStatus === "error" ? "失败" : "已连接"}`
-              : "预览模式：瓦片与深空照片仅显示最模糊层"}
+              : "预览模式：深空照片提供粗预览；登录后可用高清与 OIII / H-alpha"}
           </div>
         </div>
 
@@ -2547,7 +2623,9 @@ export default function SkyMapCanvas() {
           <div className="flex items-center gap-1">
             <div className="mr-auto text-white/40 text-[13px]">NSNS OIII</div>
             <ToggleBtn label="显示" on={showNSNS} bg="rgba(90,180,220,.75)" color="#fff"
+              disabled={!user}
               onClick={() => {
+                if (!user) return;
                 const value = !showNSNS;
                 setShowNSNS(value);
                 showNSNSRef.current = value;
@@ -2610,7 +2688,9 @@ export default function SkyMapCanvas() {
           <div className="flex items-center gap-1">
             <div className="mr-auto text-white/40 text-[13px]">NSNS H-alpha</div>
             <ToggleBtn label="显示" on={showNSNSHalpha} bg="rgba(220,80,90,.75)" color="#fff"
+              disabled={!user}
               onClick={() => {
+                if (!user) return;
                 const v = !showNSNSHalpha;
                 setShowNSNSHalpha(v);
                 showNSNSHalphaRef.current = v;
@@ -2681,53 +2761,30 @@ export default function SkyMapCanvas() {
 
         {/* Search + coordinate jump */}
         <div className="px-3 py-2 border-b border-white/5">
-          <SidebarCoordSection
-            jumpTo={(ra, dec, f) => {
-              centerRA.current = ra; centerDec.current = dec;
-              if (f !== undefined) fov.current = f;
-              updateCenterCoord(true);
-              requestDraw();
-            }}
-            searchQuery={searchQuery}
-            onSearchInput={handleSearchInput}
-            onSearchSubmit={handleSearchSubmit}
-            searchResults={searchResults}
-            showDropdown={showSearchDropdown}
-            setShowDropdown={setShowSearchDropdown}
-          />
-        </div>
-
-        {/* Favorite targets */ }
-        <div className="px-3 py-2 border-b border-white/5">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-white/40 text-[13px]">感兴趣目标</div>
-            <span className="text-[11px] text-white/25">{user ? `${userDocument.favoriteTargets.length} 个` : "需登录"}</span>
-          </div>
-          <div className="flex gap-1.5">
-            <input value={favoriteName} onChange={(event) => setFavoriteName(event.target.value)} placeholder="目标名称（可选）" disabled={!user}
-              onKeyDown={(event) => { if (event.key === "Enter") addCenterFavorite(); }}
-              className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/80 outline-none placeholder:text-white/20 disabled:opacity-35" />
-            <button onClick={addCenterFavorite} disabled={!user} className="rounded bg-amber-500/45 px-2 py-1 text-xs text-amber-50 hover:bg-amber-400/60 disabled:opacity-30">收藏中心</button>
-          </div>
-          {userDocument.favoriteTargets.length > 0 && (
-            <div className="mt-1.5 max-h-32 space-y-1 overflow-y-auto">
-              {userDocument.favoriteTargets.map((target) => (
-                <div key={target.id} className="flex items-center gap-1 rounded bg-white/[.035] px-1.5 py-1">
-                  <button onClick={() => jumpTo(target.ra, target.dec, target.fov)} title={`${target.ra.toFixed(5)}°, ${target.dec.toFixed(5)}°`}
-                    className="min-w-0 flex-1 truncate text-left text-xs text-white/65 hover:text-white">{target.name}</button>
-                  <button title="删除收藏" onClick={() => deleteFavoriteTarget(target.id)} className="rounded px-1 text-white/25 hover:bg-red-500/20 hover:text-red-200">×</button>
-                </div>
-              ))}
+          <button onClick={() => setSearchToolsExpanded((value) => !value)}
+            className="flex w-full items-center gap-2 rounded border border-indigo-300/20 bg-indigo-400/10 px-2.5 py-1.5 text-left text-indigo-100/80 hover:bg-indigo-400/20">
+            <Search size={16} />
+            <span className="font-medium">搜索目标</span>
+            <span className="ml-auto text-[11px] text-white/35">{searchToolsExpanded ? "收起" : "展开"}</span>
+          </button>
+          {searchToolsExpanded && (
+            <div className="mt-2">
+              <SidebarCoordSection
+                jumpTo={(ra, dec, f) => {
+                  centerRA.current = ra; centerDec.current = dec;
+                  if (f !== undefined) fov.current = f;
+                  updateCenterCoord(true);
+                  requestDraw();
+                }}
+                searchQuery={searchQuery}
+                onSearchInput={handleSearchInput}
+                onSearchSubmit={handleSearchSubmit}
+                searchResults={searchResults}
+                showDropdown={showSearchDropdown}
+                setShowDropdown={setShowSearchDropdown}
+              />
             </div>
           )}
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-            <button onClick={exportFavorites} disabled={!user || userDocument.favoriteTargets.length === 0}
-              className="rounded border border-white/10 py-1 text-xs text-white/50 hover:bg-white/5 disabled:opacity-25">导出目标 JSON</button>
-            <button onClick={() => favoriteImportRef.current?.click()} disabled={!user}
-              className="rounded border border-white/10 py-1 text-xs text-white/50 hover:bg-white/5 disabled:opacity-25">导入目标 JSON</button>
-            <input ref={favoriteImportRef} type="file" accept="application/json,.json" className="hidden"
-              onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFavorites(file); }} />
-          </div>
         </div>
 
         {/* Camera sim toggle + panel */}
@@ -2738,9 +2795,7 @@ export default function SkyMapCanvas() {
               setShowCamSim(v);
               showCamSimRef.current = v;
               if (v && camEntries.length === 0) {
-                const init: CamConfig[] = [{ focal: 500, sw: 36, sh: 24, angle: 0, mosX: 1, mosY: 1, overlap: 20 }];
-                setCamEntries(init);
-                camEntriesRef.current = init;
+                commitCamEntries([createCamEntry()]);
               }
               requestDraw();
             }}
@@ -2754,70 +2809,109 @@ export default function SkyMapCanvas() {
           </button>
           {showCamSim && (
             <div className="mt-2 text-xs text-white/80">
-              {camEntries.map((cfg, i) => (
-                <div key={i} className="mb-2 p-1.5 rounded bg-white/5 border border-white/5">
-                  <div className="flex items-center gap-1 flex-wrap mb-1">
-                    <span className="text-white/40">f</span>
-                    <input type="number" value={cfg.focal} onChange={e => updateCamEntry(i, "focal", e.target.value)}
-                      className="w-16 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">mm</span>
-                    <input type="number" value={cfg.sw} onChange={e => updateCamEntry(i, "sw", e.target.value)}
-                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">×</span>
-                    <input type="number" value={cfg.sh} onChange={e => updateCamEntry(i, "sh", e.target.value)}
-                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">mm</span>
+              {camEntries.map((cfg, i) => {
+                const cameraId = cfg.id || `camera-${i}`;
+                const targets = targetsForCamera(cfg, i);
+                const allTargetsHidden = targets.length > 0 && targets.every((target) => target.hidden);
+                const candidatesCollapsed = Boolean(candidateGroupsCollapsed[cameraId]);
+                return (
+                  <div key={cameraId} className="mb-2 rounded border border-white/7 bg-white/[.035] p-1.5">
+                    <div className="flex items-center gap-1">
+                      <input value={cfg.name || ""} onChange={(event) => patchCamEntry(i, { name: event.target.value })}
+                        placeholder={`${cfg.focal}mm 视场`}
+                        className="min-w-0 flex-1 rounded border border-white/10 bg-black/15 px-2 py-1 text-xs font-medium text-white/85 outline-none placeholder:text-white/45 focus:border-indigo-300/40" />
+                      <button onClick={() => patchCamEntry(i, { hidden: !cfg.hidden })}
+                        className="rounded border border-white/10 px-1.5 py-1 text-[11px] text-white/55 hover:bg-white/8">
+                        {cfg.hidden ? "显示" : "隐藏"}
+                      </button>
+                      <button title={cfg.collapsed ? "展开视场" : "折叠视场"} onClick={() => patchCamEntry(i, { collapsed: !cfg.collapsed })}
+                        className="rounded px-1.5 py-1 text-white/45 hover:bg-white/8">{cfg.collapsed ? "▾" : "▴"}</button>
+                    </div>
+                    {!cfg.collapsed && (
+                      <>
+                        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                          <span className="text-white/40">f</span>
+                          <input type="number" value={cfg.focal} onChange={event => updateCamEntry(i, "focal", event.target.value)}
+                            className="w-16 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">mm</span>
+                          <input type="number" value={cfg.sw} onChange={event => updateCamEntry(i, "sw", event.target.value)}
+                            className="w-14 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">×</span>
+                          <input type="number" value={cfg.sh} onChange={event => updateCamEntry(i, "sh", event.target.value)}
+                            className="w-14 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">mm</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1 flex-wrap">
+                          <span className="text-white/40">∠</span>
+                          <input type="number" value={cfg.angle} onChange={event => updateCamEntry(i, "angle", event.target.value)}
+                            className="w-14 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">°</span>
+                          <span className="ml-2 text-white/40">Mosaic</span>
+                          <input type="number" value={cfg.mosX} onChange={event => updateCamEntry(i, "mosX", event.target.value)}
+                            className="w-10 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">×</span>
+                          <input type="number" value={cfg.mosY} onChange={event => updateCamEntry(i, "mosY", event.target.value)}
+                            className="w-10 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">重叠</span>
+                          <input type="number" value={cfg.overlap} onChange={event => updateCamEntry(i, "overlap", event.target.value)}
+                            className="w-11 rounded border border-white/10 bg-white/5 px-1 py-0.5 text-center text-xs outline-none" />
+                          <span className="text-white/40">%</span>
+                        </div>
+                        <div className="mt-2 border-t border-white/5 pt-2">
+                          <div className="mb-1 flex items-center gap-1">
+                            <button onClick={() => setCandidateGroupsCollapsed((current) => ({ ...current, [cameraId]: !candidatesCollapsed }))}
+                              className="flex min-w-0 flex-1 items-center justify-between rounded px-1 py-1 text-left text-white/55 hover:bg-white/5">
+                              <span>候选目标目录</span>
+                              <span className="text-[11px] text-white/30">{targets.length} 个 {candidatesCollapsed ? "▾" : "▴"}</span>
+                            </button>
+                            <button disabled={targets.length === 0} onClick={() => setCameraTargetsHidden(cfg, i, !allTargetsHidden)}
+                              className="rounded border border-white/10 px-1.5 py-1 text-[11px] text-white/45 hover:bg-white/8 disabled:opacity-25">
+                              {allTargetsHidden ? "全部显示" : "全部隐藏"}
+                            </button>
+                          </div>
+                          {!candidatesCollapsed && (
+                            <>
+                              <div className="flex gap-1">
+                                <input value={candidateNames[cameraId] || ""}
+                                  onChange={(event) => setCandidateNames((current) => ({ ...current, [cameraId]: event.target.value }))}
+                                  onKeyDown={(event) => { if (event.key === "Enter") recordCameraCandidate(cfg, i); }}
+                                  disabled={!user} placeholder="候选目标名称"
+                                  className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs outline-none placeholder:text-white/20 disabled:opacity-35" />
+                                <button onClick={() => recordCameraCandidate(cfg, i)} disabled={!user}
+                                  className="rounded bg-amber-500/55 px-2 py-1 text-xs text-amber-50 hover:bg-amber-400/70 disabled:opacity-30">记录</button>
+                              </div>
+                              <div className="mt-1 max-h-32 space-y-1 overflow-y-auto">
+                                {targets.map((target) => (
+                                  <div key={target.id} className="flex items-center gap-1 rounded bg-amber-300/[.035] px-1 py-0.5">
+                                    <input defaultValue={target.name} onBlur={(event) => renameCameraCandidate(target, event.target.value)}
+                                      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                                      className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-amber-100/80 outline-none focus:border-amber-300/30" />
+                                    <button title="跳转" onClick={() => jumpTo(target.ra, target.dec, target.fov)}
+                                      className="rounded px-1 text-indigo-200/70 hover:bg-indigo-500/25">定位</button>
+                                    <button title={target.hidden ? "显示候选框" : "隐藏候选框"} onClick={() => saveCameraCandidateTarget({ ...target, hidden: !target.hidden })}
+                                      className="rounded px-1 text-white/35 hover:bg-white/8">{target.hidden ? "显示" : "隐藏"}</button>
+                                    <button title="删除候选目标" onClick={() => deleteCameraCandidateTarget(target.id)}
+                                      className="rounded px-1 text-white/25 hover:bg-red-500/20 hover:text-red-200">×</button>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <button onClick={() => removeCamEntry(i)}
+                          className="mt-2 w-full rounded border border-red-300/15 bg-red-500/10 py-1 text-[11px] text-red-200/60 hover:bg-red-500/20 hover:text-red-100">
+                          删除视场所有数据
+                        </button>
+                      </>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1 flex-wrap mb-1">
-                    <span className="text-white/40">∠</span>
-                    <input type="number" value={cfg.angle} onChange={e => updateCamEntry(i, "angle", e.target.value)}
-                      className="w-14 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">°</span>
-                    <button onClick={() => removeCamEntry(i)}
-                      className="ml-auto px-1 py-0.5 rounded bg-red-500/40 text-white/80 hover:bg-red-400/60 text-xs">×</button>
-                  </div>
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-white/40">Mosaic</span>
-                    <input type="number" value={cfg.mosX} onChange={e => updateCamEntry(i, "mosX", e.target.value)}
-                      className="w-10 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">×</span>
-                    <input type="number" value={cfg.mosY} onChange={e => updateCamEntry(i, "mosY", e.target.value)}
-                      className="w-10 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">重叠</span>
-                    <input type="number" value={cfg.overlap} onChange={e => updateCamEntry(i, "overlap", e.target.value)}
-                      className="w-12 px-1 py-0.5 rounded bg-white/5 border border-white/10 text-white/80 text-xs text-center outline-none" />
-                    <span className="text-white/40">%</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               <button onClick={addCamEntry}
-                className="w-full py-1 rounded bg-indigo-500/40 text-white/80 hover:bg-indigo-400/60 text-xs">
+                className="w-full rounded bg-indigo-500/40 py-1 text-xs text-white/80 hover:bg-indigo-400/60">
                 + 添加视场
               </button>
-              <div className="mt-2 border-t border-white/5 pt-2">
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-white/40">云端视场方案</span>
-                  <span className="text-[11px] text-white/25">{user ? `${userDocument.cameraFields.length} 个` : "需登录"}</span>
-                </div>
-                <div className="flex gap-1.5">
-                  <input value={cameraFieldName} onChange={(event) => setCameraFieldName(event.target.value)} disabled={!user}
-                    onKeyDown={(event) => { if (event.key === "Enter") saveCurrentCameraField(); }}
-                    placeholder="方案名称" className="min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs outline-none placeholder:text-white/20 disabled:opacity-35" />
-                  <button onClick={saveCurrentCameraField} disabled={!user || camEntries.length === 0}
-                    className="rounded bg-emerald-500/45 px-2 py-1 text-xs text-emerald-50 hover:bg-emerald-400/60 disabled:opacity-30">保存</button>
-                </div>
-                {userDocument.cameraFields.length > 0 && (
-                  <div className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
-                    {userDocument.cameraFields.map((field) => (
-                      <div key={field.id} className="flex items-center gap-1 rounded bg-white/[.035] px-1.5 py-1">
-                        <button onClick={() => loadCameraField(field.entries)} className="min-w-0 flex-1 truncate text-left text-xs text-white/65 hover:text-white">{field.name}</button>
-                        <span className="text-[10px] text-white/25">{field.entries.length} 组</span>
-                        <button title="删除方案" onClick={() => deleteCameraField(field.id)} className="rounded px-1 text-white/25 hover:bg-red-500/20 hover:text-red-200">×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {!user && <div className="mt-1 text-[11px] text-white/25">登录后可记录并云端保存每个视场的候选目标</div>}
             </div>
           )}
         </div>

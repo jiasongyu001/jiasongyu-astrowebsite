@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   EMPTY_USER_DOCUMENT,
   type AuthUser,
+  type CameraCandidateTarget,
+  type CameraConfig,
   type FavoriteTarget,
   type SavedCameraField,
   type SkyMapState,
@@ -23,6 +25,9 @@ type UserDataContextValue = {
   deleteCameraField: (id: string) => void;
   saveFavoriteTarget: (target: FavoriteTarget) => void;
   deleteFavoriteTarget: (id: string) => void;
+  saveCameraCandidateTarget: (target: CameraCandidateTarget) => void;
+  deleteCameraCandidateTarget: (id: string) => void;
+  setCameraEntries: (entries: CameraConfig[]) => void;
   setMapState: (state: SkyMapState) => void;
   importFavoriteTargets: (targets: FavoriteTarget[]) => void;
 };
@@ -43,7 +48,11 @@ function normalizeDocument(value: Partial<UserDocument> | null | undefined): Use
   return {
     version: 1,
     cameraFields: Array.isArray(value?.cameraFields) ? value.cameraFields.slice(0, 100) : [],
+    cameraEntries: Array.isArray(value?.cameraEntries) ? value.cameraEntries.slice(0, 20) : [],
     favoriteTargets: Array.isArray(value?.favoriteTargets) ? value.favoriteTargets.slice(0, 1000) : [],
+    cameraCandidateTargets: Array.isArray(value?.cameraCandidateTargets)
+      ? value.cameraCandidateTargets.slice(0, 500).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      : [],
     mapState: value?.mapState ?? null,
   };
 }
@@ -149,6 +158,20 @@ export function UserDataProvider({ children }: { children: React.ReactNode }) {
     deleteFavoriteTarget: (id) => update((current) => ({
       ...current,
       favoriteTargets: current.favoriteTargets.filter((target) => target.id !== id),
+    })),
+    saveCameraCandidateTarget: (target) => update((current) => ({
+      ...current,
+      cameraCandidateTargets: current.cameraCandidateTargets.some((item) => item.id === target.id)
+        ? current.cameraCandidateTargets.map((item) => item.id === target.id ? target : item)
+        : [...current.cameraCandidateTargets, target].slice(0, 500),
+    })),
+    deleteCameraCandidateTarget: (id) => update((current) => ({
+      ...current,
+      cameraCandidateTargets: current.cameraCandidateTargets.filter((target) => target.id !== id),
+    })),
+    setCameraEntries: (entries) => update((current) => ({
+      ...current,
+      cameraEntries: entries.slice(0, 20),
     })),
     setMapState: (state) => update((current) => ({ ...current, mapState: state })),
     importFavoriteTargets: (targets) => update((current) => ({
