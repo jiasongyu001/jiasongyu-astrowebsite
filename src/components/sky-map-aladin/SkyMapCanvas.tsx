@@ -729,7 +729,7 @@ export default function SkyMapCanvas() {
 
       // Detail images are loaded on-demand when user clicks an overlay
       // Build search index
-      buildSearchIndex(metaData, dsoData.current);
+      buildSearchIndex(metaData, dsoData.current, pnData.current, snrData.current);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "Failed to load sky-map data");
@@ -857,14 +857,34 @@ export default function SkyMapCanvas() {
   /* ── search index ── */
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
-  const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B)\s*-?\s*(\d+.*)$/i;
-  const ID_RX = /(?:NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
+  const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B|G|PK)\s*-?\s*(\d+.*)$/i;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
-  function buildSearchIndex(metas: Overlay[], dso: DSORow[]) {
+  function buildSearchIndex(metas: Overlay[], dso: DSORow[], pn: PNRow[], snr: SNRRow[]) {
     const names: SearchEntry[] = [];
     const rawCats: Record<string, CatEntry & { quality: number }> = {};
     const xrefQ: Record<string, number> = { NGC: 40, SH2: 30, MEL: 20, IC: 10 };
+
+    const addName = (name: string, label: string, ra: number, dec: number, fov: number) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      names.push({ norm: normalize(trimmed), label, ra, dec, fov });
+    };
+
+    const addCatalogAliases = (name: string, label: string, ra: number, dec: number, fov: number, quality = 0) => {
+      addName(name, label, ra, dec, fov);
+      for (const alias of name.split(/[,;/]|\s+\(|\)\s*/)) addName(alias, label, ra, dec, fov);
+      const idRx = /(NGC|Sh\s*2|IC|MEL|M|C|B|G|PK)\s*-?\s*(\d+(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)?)/gi;
+      let match;
+      while ((match = idRx.exec(name)) !== null) {
+        const prefix = match[1].toUpperCase().replace(/\s/g, "");
+        const num = match[2];
+        const key = `${prefix}:${num}`;
+        if (!rawCats[key] || quality > rawCats[key].quality) {
+          rawCats[key] = { prefix, num, label, ra, dec, fov, quality };
+        }
+      }
+    };
 
     // Overlays (photos)
     for (const m of metas) {
@@ -874,10 +894,11 @@ export default function SkyMapCanvas() {
         : m.name;
       const fovH = Math.max(m.field_w_deg, m.field_h_deg) * 1.5;
       const label = `📷 ${display}`;
-      names.push({ norm: normalize(display), label, ra: m.ra, dec: m.dec, fov: fovH });
+      addName(display, label, m.ra, m.dec, fovH);
       if (parts.length === 4) {
-        names.push({ norm: normalize(parts[0]), label, ra: m.ra, dec: m.dec, fov: fovH });
+        addName(parts[0], label, m.ra, m.dec, fovH);
       }
+      for (const objectName of m.objects ?? []) addName(objectName, label, m.ra, m.dec, fovH);
     }
 
     // DSO catalog
@@ -886,22 +907,22 @@ export default function SkyMapCanvas() {
       if (!nm) continue;
       const fovD = Math.max(radDeg * 6, 1.0);
       const label = `⚪ ${nm}`;
-      names.push({ norm: normalize(nm), label, ra, dec, fov: fovD });
-
       const pm = PAREN_RX.exec(nm);
       const xc = pm ? pm[1].toUpperCase() : "";
       const quality = xrefQ[xc] ?? 0;
+      addCatalogAliases(nm, label, ra, dec, fovD, quality);
+    }
 
-      const idRx = /(NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
-      let match;
-      while ((match = idRx.exec(nm)) !== null) {
-        const pfx = match[1].toUpperCase().replace(/\s/g, "");
-        const num = match[2];
-        const key = `${pfx}:${num}`;
-        if (!rawCats[key] || quality > rawCats[key].quality) {
-          rawCats[key] = { prefix: pfx, num, label, ra, dec, fov: fovD, quality };
-        }
-      }
+    // Planetary nebulae and candidates shown on the canvas
+    for (const [ra, dec, radDeg, , , name] of pn) {
+      if (!name) continue;
+      addCatalogAliases(name, `PN ${name}`, ra, dec, Math.max(radDeg * 8, 0.5));
+    }
+
+    // Supernova remnants shown on the canvas
+    for (const [ra, dec, radDeg, name] of snr) {
+      if (!name) continue;
+      addCatalogAliases(name, `SNR ${name}`, ra, dec, Math.max(radDeg * 6, 1.0));
     }
 
     searchNames.current = names;
@@ -1399,14 +1420,15 @@ export default function SkyMapCanvas() {
       const tx = cx - x * sc;
       const ty = cy - y * sc;
       if (tx < -W || tx > W * 2 || ty < -H || ty > H * 2) continue;
+      const targetCenter = makeCenter(target.ra, target.dec);
 
       let labelX = tx;
       let labelY = ty;
       for (const cfg of target.entries) {
         const { focal, sw, sh, angle, mosX, mosY, overlap } = cfg;
         if (focal <= 0 || sw <= 0 || sh <= 0) continue;
-        const halfW = 2 * Math.tan(Math.atan(sw / (2 * focal)) / 2) * sc;
-        const halfH = 2 * Math.tan(Math.atan(sh / (2 * focal)) / 2) * sc;
+        const halfW = 2 * Math.tan(Math.atan(sw / (2 * focal)) / 2);
+        const halfH = 2 * Math.tan(Math.atan(sh / (2 * focal)) / 2);
         const cosA = Math.cos(angle * Math.PI / 180);
         const sinA = Math.sin(angle * Math.PI / 180);
         const olap = Math.max(0, Math.min(99, overlap)) / 100;
@@ -1417,6 +1439,14 @@ export default function SkyMapCanvas() {
         const rot = (px: number, py: number): [number, number] => [
           px * cosA - py * sinA, px * sinA + py * cosA,
         ];
+        const projectFixedSkyPoint = (px: number, py: number): [number, number, number] => {
+          const [rx, ry] = rot(px, py);
+          // Candidate geometry is defined once in the target-centered tangent
+          // plane, then reprojected into the current view on every frame.
+          const [ra, dec] = stereoInv(-rx, -ry, targetCenter);
+          const [viewX, viewY, viewCosC] = stereoFwd(ra, dec, c);
+          return [cx - viewX * sc, cy - viewY * sc, viewCosC];
+        };
 
         ctx.strokeStyle = "rgba(255,190,70,0.78)";
         ctx.lineWidth = 1.2 * dpr;
@@ -1429,19 +1459,23 @@ export default function SkyMapCanvas() {
               [pcx - halfW, pcy - halfH], [pcx + halfW, pcy - halfH],
               [pcx + halfW, pcy + halfH], [pcx - halfW, pcy + halfH],
             ];
+            const projected = corners.map(([cornerX, cornerY]) => projectFixedSkyPoint(cornerX, cornerY));
+            if (projected.some(([, , cornerCosC]) => cornerCosC < -0.2)) continue;
             ctx.beginPath();
-            for (let index = 0; index < corners.length; index++) {
-              const [rx, ry] = rot(corners[index][0], corners[index][1]);
-              if (index === 0) ctx.moveTo(tx + rx, ty + ry);
-              else ctx.lineTo(tx + rx, ty + ry);
+            for (let index = 0; index < projected.length; index++) {
+              const [screenX, screenY] = projected[index];
+              if (index === 0) ctx.moveTo(screenX, screenY);
+              else ctx.lineTo(screenX, screenY);
             }
             ctx.closePath();
             ctx.stroke();
           }
         }
-        const [topRightX, topRightY] = rot(totalHW, -totalHH);
-        labelX = Math.max(labelX, tx + topRightX);
-        labelY = Math.min(labelY, ty + topRightY);
+        const [topRightX, topRightY, topRightCosC] = projectFixedSkyPoint(totalHW, -totalHH);
+        if (topRightCosC >= -0.2) {
+          labelX = topRightX;
+          labelY = topRightY;
+        }
       }
       ctx.setLineDash([]);
       ctx.fillStyle = "rgba(255,210,120,0.94)";
