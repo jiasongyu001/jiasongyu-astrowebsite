@@ -858,7 +858,7 @@ export default function SkyMapCanvas() {
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
   const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B|G|PK)\s*-?\s*(\d+.*)$/i;
-  const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?[+-][0-9]+(?:\.[0-9]+)?)$/i;
+  const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?(?:[+-][0-9]+(?:\.[0-9]+)?)?)$/i;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
   function buildSearchIndex(metas: Overlay[], dso: DSORow[], pn: PNRow[], snr: SNRRow[]) {
@@ -923,7 +923,9 @@ export default function SkyMapCanvas() {
     // Supernova remnants shown on the canvas
     for (const [ra, dec, radDeg, name] of snr) {
       if (!name) continue;
-      addCatalogAliases(name, `SNR ${name}`, ra, dec, Math.max(radDeg * 6, 1.0));
+      const label = `SNR ${name}`;
+      addCatalogAliases(name, label, ra, dec, Math.max(radDeg * 6, 1.0));
+      addName(label, label, ra, dec, Math.max(radDeg * 6, 1.0));
     }
 
     searchNames.current = names;

@@ -473,7 +473,7 @@ export default function SkyMapCanvas() {
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
   const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B)\s*-?\s*(\d+.*)$/i;
-  const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?[+-][0-9]+(?:\.[0-9]+)?)$/i;
+  const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?(?:[+-][0-9]+(?:\.[0-9]+)?)?)$/i;
   const ID_RX = /(?:NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
