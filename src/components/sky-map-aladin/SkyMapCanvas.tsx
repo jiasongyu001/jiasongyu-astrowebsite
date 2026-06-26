@@ -858,6 +858,7 @@ export default function SkyMapCanvas() {
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
   const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B|G|PK)\s*-?\s*(\d+.*)$/i;
+  const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?[+-][0-9]+(?:\.[0-9]+)?)$/i;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
   function buildSearchIndex(metas: Overlay[], dso: DSORow[], pn: PNRow[], snr: SNRRow[]) {
@@ -933,6 +934,16 @@ export default function SkyMapCanvas() {
     const q = query.trim();
     if (!q) return [];
     const results: { label: string; ra: number; dec: number; fov: number; score: number }[] = [];
+
+    const sm = SNR_PREFIX_RX.exec(q);
+    if (sm) {
+      const qn = sm[1].toUpperCase();
+      for (const c of searchCats.current) {
+        if (c.prefix !== "G") continue;
+        if (c.num === qn) results.push({ ...c, score: 11000 });
+        else if (c.num.startsWith(qn)) results.push({ ...c, score: 8500 - c.num.length });
+      }
+    }
 
     // Phase 1: catalog prefix + number
     const cm = CAT_PREFIX_RX.exec(q);
@@ -1123,8 +1134,8 @@ export default function SkyMapCanvas() {
     if (nsnsHalphaAbovePhotosRef.current) drawNSNSHalphaTiles(ctx, sc, c, cx, cy, W, H);
     drawRecordedCameraCandidates(ctx, sc, c, cx, cy, W, H);
     drawPN(ctx, sc, c, cx, cy, W, H, fov.current);
-    drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
     drawDSO(ctx, sc, c, cx, cy, W, H, fov.current);
+    drawSNR(ctx, sc, c, cx, cy, W, H, fov.current);
     drawCamFov(ctx, sc, cx, cy);
 
     // Crosshair
@@ -1703,8 +1714,8 @@ export default function SkyMapCanvas() {
   ) {
     if (!showSNRRef.current || snrData.current.length === 0) return;
     const nsnsActive = showNSNSRef.current || showNSNSHalphaRef.current;
-    const lineW = Math.max(0.4, Math.min(2.2, 30 / fovDeg)) * (nsnsActive ? 2 : 1);
-    const alpha = Math.max(140, Math.min(240, Math.round(600 / fovDeg)));
+    const lineW = Math.max(0.8, Math.min(2.6, 36 / fovDeg)) * (nsnsActive ? 2 : 1);
+    const alpha = Math.max(180, Math.min(255, Math.round(900 / fovDeg)));
     const a = (alpha / 255).toFixed(2);
     const showAll = fovDeg < 10;
     const showBig = fovDeg < 30;
