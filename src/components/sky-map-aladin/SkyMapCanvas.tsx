@@ -858,6 +858,7 @@ export default function SkyMapCanvas() {
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
   const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B|G|PK)\s*-?\s*(\d+.*)$/i;
+  const PN_PREFIX_RX = /^(?:(?:PN|PNG)\s*G?|G)?\s*([0-9]{3}(?:\.\d+)?(?:[+-][0-9]{0,2}(?:\.\d+)?)?)$/i;
   const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?(?:[+-][0-9]+(?:\.[0-9]+)?)?)$/i;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
@@ -917,7 +918,21 @@ export default function SkyMapCanvas() {
     // Planetary nebulae and candidates shown on the canvas
     for (const [ra, dec, radDeg, , , name] of pn) {
       if (!name) continue;
-      addCatalogAliases(name, `PN ${name}`, ra, dec, Math.max(radDeg * 8, 0.5));
+      const label = `PN ${name}`;
+      const fovP = Math.max(radDeg * 8, 0.5);
+      addCatalogAliases(name, label, ra, dec, fovP);
+      addName(label, label, ra, dec, fovP);
+      const pnMatch = /\b(?:PN\s*G|PNG|G)?\s*([0-9]{3}(?:\.\d+)?[+-][0-9]{2}(?:\.\d+)?)\b/i.exec(name);
+      if (pnMatch) {
+        const num = pnMatch[1].toUpperCase();
+        for (const alias of [num, `G${num}`, `PN G${num}`, `PNG ${num}`]) {
+          addName(alias, label, ra, dec, fovP);
+        }
+        const key = `PNG:${num}`;
+        if (!rawCats[key]) {
+          rawCats[key] = { prefix: "PNG", num, label, ra, dec, fov: fovP, quality: 50 };
+        }
+      }
     }
 
     // Supernova remnants shown on the canvas
@@ -936,6 +951,16 @@ export default function SkyMapCanvas() {
     const q = query.trim();
     if (!q) return [];
     const results: { label: string; ra: number; dec: number; fov: number; score: number }[] = [];
+
+    const pm = PN_PREFIX_RX.exec(q);
+    if (pm) {
+      const qn = pm[1].toUpperCase();
+      for (const c of searchCats.current) {
+        if (c.prefix !== "PNG") continue;
+        if (c.num === qn) results.push({ ...c, score: 11500 });
+        else if (c.num.startsWith(qn)) results.push({ ...c, score: 8700 - c.num.length });
+      }
+    }
 
     const sm = SNR_PREFIX_RX.exec(q);
     if (sm) {

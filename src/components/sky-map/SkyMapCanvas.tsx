@@ -459,7 +459,7 @@ export default function SkyMapCanvas() {
 
       // Detail images are loaded on-demand when user clicks an overlay
       // Build search index
-      buildSearchIndex(metaData, dsoData.current, snrData.current);
+      buildSearchIndex(metaData, dsoData.current, pnData.current, snrData.current);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "Failed to load sky-map data");
@@ -473,14 +473,16 @@ export default function SkyMapCanvas() {
   const normalize = (s: string) => s.replace(/[\s\-_()]+/g, "").toLowerCase();
 
   const CAT_PREFIX_RX = /^(NGC|Sh\s*2|IC|MEL|M|C|B)\s*-?\s*(\d+.*)$/i;
+  const PN_PREFIX_RX = /^(?:(?:PN|PNG)\s*G?|G)?\s*([0-9]{3}(?:\.\d+)?(?:[+-][0-9]{0,2}(?:\.\d+)?)?)$/i;
   const SNR_PREFIX_RX = /^(?:SNR\s*)?G\s*([0-9]+(?:\.[0-9]+)?(?:[+-][0-9]+(?:\.[0-9]+)?)?)$/i;
   const ID_RX = /(?:NGC|Sh\s*2|IC|MEL|M)\s+(\d+)/gi;
   const PAREN_RX = /\((\w+)\s+\d+\)/;
 
-  function buildSearchIndex(metas: Overlay[], dso: DSORow[], snr: SNRRow[]) {
+  function buildSearchIndex(metas: Overlay[], dso: DSORow[], pn: PNRow[], snr: SNRRow[]) {
     const names: SearchEntry[] = [];
     const rawCats: Record<string, CatEntry & { quality: number }> = {};
     const xrefQ: Record<string, number> = { NGC: 40, SH2: 30, MEL: 20, IC: 10 };
+    const pnIdRx = /\b(?:PN\s*G|PNG|G)?\s*([0-9]{3}(?:\.\d+)?[+-][0-9]{2}(?:\.\d+)?)\b/i;
     const snrIdRx = /\bG\s*([0-9]+(?:\.[0-9]+)?[+-][0-9]+(?:\.[0-9]+)?)\b/i;
 
     // Overlays (photos)
@@ -521,6 +523,32 @@ export default function SkyMapCanvas() {
       }
     }
 
+    // PN catalog
+    for (const [ra, dec, radDeg, , , nm] of pn) {
+      if (!nm) continue;
+      const fovP = Math.max(radDeg * 8, 0.5);
+      const label = `🟢 ${nm}`;
+      names.push({ norm: normalize(nm), label, ra, dec, fov: fovP });
+      names.push({ norm: normalize(`PN ${nm}`), label, ra, dec, fov: fovP });
+      const pnMatch = pnIdRx.exec(nm);
+      if (pnMatch) {
+        const pnNum = pnMatch[1].toUpperCase();
+        names.push({ norm: normalize(pnNum), label, ra, dec, fov: fovP });
+        names.push({ norm: normalize(`G${pnNum}`), label, ra, dec, fov: fovP });
+        names.push({ norm: normalize(`PN G${pnNum}`), label, ra, dec, fov: fovP });
+        names.push({ norm: normalize(`PNG ${pnNum}`), label, ra, dec, fov: fovP });
+        rawCats[`PNG:${pnNum}`] = {
+          prefix: "PNG",
+          num: pnNum,
+          label,
+          ra,
+          dec,
+          fov: fovP,
+          quality: 50,
+        };
+      }
+    }
+
     // SNR catalog
     for (const [ra, dec, radDeg, nm] of snr) {
       if (!nm) continue;
@@ -553,6 +581,16 @@ export default function SkyMapCanvas() {
     const q = query.trim();
     if (!q) return [];
     const results: { label: string; ra: number; dec: number; fov: number; score: number }[] = [];
+
+    const pm = PN_PREFIX_RX.exec(q);
+    if (pm) {
+      const qn = pm[1].toUpperCase();
+      for (const c of searchCats.current) {
+        if (c.prefix !== "PNG") continue;
+        if (c.num === qn) results.push({ ...c, score: 11500 });
+        else if (c.num.startsWith(qn)) results.push({ ...c, score: 8700 - c.num.length });
+      }
+    }
 
     const sm = SNR_PREFIX_RX.exec(q);
     if (sm) {
